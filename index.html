@@ -35,6 +35,17 @@
       </div>
 
       <nav class="top-controls" aria-label="Controles generales">
+        <label class="skin-picker" title="Piel de la controladora (se guarda en hammer:skin)">
+          <span>SKIN</span>
+          <select id="skin-select" aria-label="Piel de la interfaz">
+            <option value="silver">Plata / Metálica</option>
+          </select>
+        </label>
+        <span class="midi-status" id="midi-status" data-midi-state="off"
+              title="Web MIDI no disponible">MIDI: desconectado</span>
+        <select id="midi-input" class="midi-input" aria-label="Controlador MIDI" hidden>
+          <option value="">Ninguno</option>
+        </select>
         <button type="button" class="top-btn" id="btn-cfg">cfg</button>
         <button type="button" class="top-btn" id="btn-info">i</button>
         <button type="button" class="top-btn" id="btn-stby">stby</button>
@@ -129,6 +140,22 @@
               <button type="button" data-pitch-minus aria-label="Bajar pitch">−</button>
               <button type="button" data-pitch-plus aria-label="Subir pitch">+</button>
               <button type="button" data-pitch-default aria-label="Pitch por defecto">◆</button>
+            </div>
+          </div>
+
+          <div class="jog-block" id="player-a-jog-block">
+            <div class="jog-wheel" id="player-a-jog" data-jog="a" role="slider" tabindex="0"
+                 aria-label="Jog de posición A" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                 title="Arrastra en círculo o en horizontal · rueda del ratón · doble clic = inicio">
+              <span class="jog-face" aria-hidden="true">
+                <span class="jog-marker"></span>
+                <span class="jog-cap">JOG</span>
+              </span>
+            </div>
+            <div class="jog-info">
+              <span class="jog-label">JOG / SEARCH</span>
+              <output class="jog-readout" id="player-a-jog-readout">--:--.-</output>
+              <button type="button" class="jog-reset" id="player-a-jog-reset" title="Volver al inicio de la pista">↺ 0</button>
             </div>
           </div>
 
@@ -236,6 +263,22 @@
             </div>
           </div>
 
+          <div class="jog-block" id="player-b-jog-block">
+            <div class="jog-wheel" id="player-b-jog" data-jog="b" role="slider" tabindex="0"
+                 aria-label="Jog de posición B" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                 title="Arrastra en círculo o en horizontal · rueda del ratón · doble clic = inicio">
+              <span class="jog-face" aria-hidden="true">
+                <span class="jog-marker"></span>
+                <span class="jog-cap">JOG</span>
+              </span>
+            </div>
+            <div class="jog-info">
+              <span class="jog-label">JOG / SEARCH</span>
+              <output class="jog-readout" id="player-b-jog-readout">--:--.-</output>
+              <button type="button" class="jog-reset" id="player-b-jog-reset" title="Volver al inicio de la pista">↺ 0</button>
+            </div>
+          </div>
+
           <div class="player-controls">
             <div class="transport">
               <button type="button" id="player-b-prev" data-track-prev aria-label="Pista anterior">|◀ 0 ▶|</button>
@@ -265,10 +308,17 @@
             <span class="fx-badge">A</span>
             <div class="fx-group">
               <span class="fx-caption">FILTER</span>
-              <div class="fx-seg" role="group" aria-label="Tipo de filtro A">
-                <button type="button" data-filter="off" class="active">OFF</button>
-                <button type="button" data-filter="lp">LP</button>
-                <button type="button" data-filter="hp">HP</button>
+              <div class="fx-filter-row">
+                <div class="fx-seg" role="group" aria-label="Tipo de filtro A">
+                  <button type="button" data-filter="off" class="active">OFF</button>
+                  <button type="button" data-filter="lp">LP</button>
+                  <button type="button" data-filter="hp">HP</button>
+                </div>
+                <div class="dial fx-knob" id="fx-a-cutoff-knob" data-cutoff-knob role="slider" tabindex="0"
+                     aria-label="Corte del filtro A (mando giratorio)" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"
+                     title="Arrastra o rueda · doble clic = 12 kHz">
+                  <span class="dial-face" aria-hidden="true"><span class="dial-pointer"></span></span>
+                </div>
               </div>
               <label class="fx-slider">CUT
                 <input type="range" data-cutoff min="0" max="100" step="1" value="100" aria-label="Corte del filtro A">
@@ -294,10 +344,17 @@
             <span class="fx-badge">B</span>
             <div class="fx-group">
               <span class="fx-caption">FILTER</span>
-              <div class="fx-seg" role="group" aria-label="Tipo de filtro B">
-                <button type="button" data-filter="off" class="active">OFF</button>
-                <button type="button" data-filter="lp">LP</button>
-                <button type="button" data-filter="hp">HP</button>
+              <div class="fx-filter-row">
+                <div class="fx-seg" role="group" aria-label="Tipo de filtro B">
+                  <button type="button" data-filter="off" class="active">OFF</button>
+                  <button type="button" data-filter="lp">LP</button>
+                  <button type="button" data-filter="hp">HP</button>
+                </div>
+                <div class="dial fx-knob" id="fx-b-cutoff-knob" data-cutoff-knob role="slider" tabindex="0"
+                     aria-label="Corte del filtro B (mando giratorio)" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"
+                     title="Arrastra o rueda · doble clic = 12 kHz">
+                  <span class="dial-face" aria-hidden="true"><span class="dial-pointer"></span></span>
+                </div>
               </div>
               <label class="fx-slider">CUT
                 <input type="range" data-cutoff min="0" max="100" step="1" value="100" aria-label="Corte del filtro B">
@@ -424,6 +481,14 @@
     <label class="dialog-row">Master
       <input type="range" id="cfg-master" min="0" max="1" step=".01" value=".8">
     </label>
+    <details class="midi-map">
+      <summary>Mapeo Numark NV II (plantilla extensible)</summary>
+      <table class="midi-map-table">
+        <thead><tr><th>Control</th><th>Deck</th><th>Tipo</th><th>Ch.</th><th>N.º</th><th>Acción</th></tr></thead>
+        <tbody id="midi-map-rows"></tbody>
+      </table>
+      <p class="midi-note" id="midi-map-note"></p>
+    </details>
     <button type="button" data-close-dialog>Cerrar</button>
   </dialog>
 
@@ -437,6 +502,9 @@
     <p>Cabina: cada deck tiene TRIM (±12 dB) y EQ de 3 bandas LOW/MID/HIGH (±12 dB). Arrastra o usa la rueda; doble clic en un fader lo pone a 0 dB, y «0 dB» / «EQ 0» reinician al instante. El TRIM se guarda por pista.</p>
     <p>«Limpiar títulos» quita guiones bajos y códigos de descarga de título/artista sin tocar el archivo ni su re-enlace. También está en el menú derecho de cada pista.</p>
     <p>Persistencia: se guardan títulos, marcas y carpetas, nunca las URLs <code>blob:</code>. Tras recargar, vuelve a añadir los MP3 para reconectar el audio.</p>
+    <p>Aspecto: el selector <b>SKIN</b> cambia la piel (plata, azul, rojo, negro y Barça) y se recuerda en <code>hammer:skin</code>. Sólo toca variables CSS: el audio y los vúmetros no cambian.</p>
+    <p>Jog y mandos: arrastra el círculo JOG de cada deck (en círculo por el borde o en horizontal por el centro) o usa la rueda para buscar posición; doble clic vuelve al inicio. Los mandos junto a CUT giran con arrastre o rueda y doble clic los abre a 12 kHz.</p>
+    <p>MIDI: el estado <b>MIDI: …</b> indica si Web MIDI está disponible y si hay controlador. La plantilla para Numark NV II está en <b>cfg → Mapeo</b>; sin hardware no se fuerza ninguna conexión.</p>
     <button type="button" data-close-dialog>Cerrar</button>
   </dialog>
 
@@ -470,6 +538,8 @@
   <script src="js/audio.js" defer></script>
   <script src="js/deck.js" defer></script>
   <script src="js/library.js" defer></script>
+  <script src="js/skins.js" defer></script>
+  <script src="js/midi.js" defer></script>
   <script src="js/main.js" defer></script>
 </body>
 </html>

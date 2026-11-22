@@ -342,6 +342,9 @@ document.addEventListener('DOMContentLoaded', () => {
   safe('mixer', wireMixer);
   safe('sesión', () => Session.init());
   safe('fx', wireFxRack);
+  safe('skins', () => window.Skins && window.Skins.init());
+  safe('midi', () => window.Midi && window.Midi.init());
+  safe('mapeo midi', wireMidi);
   safe('botones superiores', wireTopButtons);
   safe('botones INFO', wireInfoButtons);
   safe('vúmetro', drawMasterVU);
@@ -414,6 +417,7 @@ function wireFxRack() {
     if (!deck) return;
     let type = 'off';
     let echo = false;
+    let cutoffDial = null;
     const cut = ch.querySelector('[data-cutoff]');
     const cutOut = ch.querySelector('[data-cutoff-val]');
     const echoMix = ch.querySelector('[data-echo-mix]');
@@ -430,8 +434,24 @@ function wireFxRack() {
     }));
     if (cut) cut.addEventListener('input', () => {
       if (cutOut) cutOut.textContent = fmtHz(cutoffToHz(cut.value));
+      if (cutoffDial) cutoffDial.setValue(Number(cut.value), true);
       applyFilter();
     });
+    // Mando giratorio junto a CUT: mismo recorrido que el slider, con doble
+    // clic para abrir el filtro a 12 kHz. No crea ningún nodo de audio nuevo.
+    if (cut && window.Dial) {
+      const knob = ch.querySelector('[data-cutoff-knob]');
+      if (knob) {
+        cutoffDial = new window.Dial({
+          el: knob, min: 0, max: 100, step: 1, reset: 100, start: Number(cut.value),
+          onChange: (v) => {
+            cut.value = String(Math.round(v));
+            if (cutOut) cutOut.textContent = fmtHz(cutoffToHz(cut.value));
+            applyFilter();
+          }
+        });
+      }
+    }
     if (echoBtn) echoBtn.addEventListener('click', () => {
       echo = !echo;
       echoBtn.setAttribute('aria-pressed', echo ? 'true' : 'false');
@@ -456,6 +476,68 @@ function wireFxRack() {
     if (brake) brake.addEventListener('click', guarded(deck.brake, 'BRAKE'));
     if (start) start.addEventListener('click', guarded(deck.start, 'START'));
   });
+}
+
+// ---------- Mapeo MIDI (plantilla Numark NV II) ----------
+// Traduce la tabla de window.Midi.mapping a acciones que ya existen en la app.
+// Si no hay controlador enlazado no se dispara nada; si hay AUTO activo, los
+// controles de plato (BRAKE/START) siguen bloqueados igual que los botones FX.
+function wireMidi() {
+  const midi = window.Midi;
+  if (!midi) return;
+  midi.onControl = (entry, value) => {
+    const deck = entry.deck === 'A' ? decks.A : entry.deck === 'B' ? decks.B : null;
+
+    if (entry.noAuto && window.AutoMode && window.AutoMode.active) {
+      window.setStatus && window.setStatus('MIDI: ' + entry.label + ' bloqueado con AUTO activo');
+      return;
+    }
+
+    switch (entry.action) {
+      case 'playToggle':
+        if (deck) deck._playToggle();
+        break;
+      case 'cue':
+        if (deck) deck.cue();
+        break;
+      case 'pitch':
+        if (deck) deck.setPitch(-24 + midi.normalize(entry, value) * 48);
+        break;
+      case 'trimDb':
+        if (deck) { deck.setTrimDb(-12 + midi.normalize(entry, value) * 24); deck._persistTrim(); }
+        break;
+      case 'eq':
+        if (deck) deck.setEqBand(entry.band, -12 + midi.normalize(entry, value) * 24);
+        break;
+      case 'filterCutoff':
+        // Sólo mueve el corte si el filtro ya está en LP/HP: así el segmented
+        // control de la UI no se desincroniza al venir del hardware.
+        if (deck && deck.fxType !== 'off') {
+          const p = midi.normalize(entry, value);
+          deck.setFilter(deck.fxType, Math.round(120 * Math.pow(100, p)));
+        }
+        break;
+      case 'jog': {
+        if (!deck) break;
+        // Encoder relativo: valores 1..63 giran a la derecha y 65..127 a la izquierda.
+        const ticks = value >= 64 ? value - 128 : value;
+        if (ticks) deck._jogSeek(ticks * 0.05);
+        break;
+      }
+      case 'xfade':
+        if (window.setXf) window.setXf(-1 + midi.normalize(entry, value) * 2, { user: true });
+        break;
+      case 'brake':
+        if (deck) deck.brake();
+        break;
+      case 'start':
+        if (deck) deck.start();
+        break;
+      default:
+        return; // acción aún no vinculada: no hacer nada
+    }
+    window.setStatus && window.setStatus('MIDI · ' + entry.label);
+  };
 }
 
 // ---------- Vúmetro máster ----------

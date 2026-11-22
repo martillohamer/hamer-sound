@@ -58,6 +58,8 @@ class Deck {
     this.eq = { low: 0, mid: 0, high: 0 }; // ganancias dB de LOW/MID/HIGH
     this.pitch = 0;          // -24 .. +24 (%)
     this.cuePoint = 0;
+    this.jogAngle = 0;       // giro visual del plato (grados)
+    this._jogDragging = false;
     this.lv = 0;
     this.eqIndex = 0;
     this.autoplayAfterLoad = false;
@@ -96,6 +98,10 @@ class Deck {
       pitch: q('#detail-' + this.id + '-pitch'),
       state: q('#detail-' + this.id + '-state')
     };
+
+    this.elJog = q('#player-' + this.id + '-jog');
+    this.elJogOut = q('#player-' + this.id + '-jog-readout');
+    this.elJogReset = q('#player-' + this.id + '-jog-reset');
 
     this.btnPitchMinus = q('[data-pitch-minus]');
     this.btnPitchPlus = q('[data-pitch-plus]');
@@ -253,6 +259,10 @@ class Deck {
 
     // Ratón: drag & drop, LCD, barra de progreso, rueda de pitch y «/» con mantenido
     this._bindPointerUI();
+
+    // Jog circular: sólo seek (currentTime). Nunca escribe playbackRate,
+    // crossfader ni ganancias: AUTO, BRAKE/START y los vúmetros siguen igual.
+    this._bindJog();
   }
 
   // ---------- Interacción con el ratón ----------
@@ -438,6 +448,112 @@ class Deck {
       if (!repeated) this.seek(dir * 10);
       repeated = false;
     });
+  }
+
+  // ---------- Jog / plato de búsqueda ----------
+  // Borde del círculo = arrastre angular; centro = arrastre horizontal.
+  // Ambos modos acumulan segundos y aplican una posición ABSOLUTA desde el
+  // inicio del arrastre, para que el seek sea fluido y no derive.
+  _bindJog() {
+    const el = this.elJog;
+    if (!el) return;
+    const SECONDS_PER_TURN = 8;
+    const SECONDS_PER_PX = 0.05;
+    let mode = 'circle';
+    let lastAngle = 0;
+    let lastX = 0;
+    let startT = 0;
+    let acc = 0;
+
+    const point = (e) => {
+      const b = el.getBoundingClientRect();
+      const cx = b.left + b.width / 2;
+      const cy = b.top + b.height / 2;
+      return {
+        angle: Math.atan2(e.clientY - cy, e.clientX - cx),
+        radius: Math.hypot(e.clientX - cx, e.clientY - cy) / (b.width / 2 || 1)
+      };
+    };
+    const wrap = (d) => {
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      return d;
+    };
+    const setAngle = () => el.style.setProperty('--jog-angle', this.jogAngle.toFixed(1) + 'deg');
+
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const a = this.audio;
+      if (!this.track || !a || !Number.isFinite(a.duration)) return;
+      e.preventDefault();
+      const p = point(e);
+      mode = p.radius > 0.42 ? 'circle' : 'linear';
+      lastAngle = p.angle;
+      lastX = e.clientX;
+      startT = a.currentTime || 0;
+      acc = 0;
+      this._jogDragging = true;
+      try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!this._jogDragging) return;
+      if (mode === 'circle') {
+        const p = point(e);
+        const da = wrap(p.angle - lastAngle);
+        lastAngle = p.angle;
+        acc += (da / (2 * Math.PI)) * SECONDS_PER_TURN;
+        this.jogAngle += da * 180 / Math.PI;
+      } else {
+        const dx = e.clientX - lastX;
+        lastX = e.clientX;
+        acc += dx * SECONDS_PER_PX;
+        this.jogAngle += dx * 2;
+      }
+      setAngle();
+      this._seekTo(startT + acc);
+    });
+
+    const stop = (e) => {
+      if (!this._jogDragging) return;
+      this._jogDragging = false;
+      try { el.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    };
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointercancel', stop);
+
+    el.addEventListener('wheel', (e) => {
+      const a = this.audio;
+      if (!this.track || !a || !Number.isFinite(a.duration)) return;
+      e.preventDefault();
+      const dir = e.deltaY > 0 ? -1 : 1;
+      this._jogSeek(dir * 0.5);
+      this.jogAngle += dir * 15;
+      setAngle();
+    }, { passive: false });
+
+    el.addEventListener('dblclick', (e) => { e.preventDefault(); this._jogHome(); });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Home') { e.preventDefault(); this._jogHome(); return; }
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      this._jogSeek(e.key === 'ArrowRight' ? 0.5 : -0.5);
+    });
+    if (this.elJogReset) this.elJogReset.addEventListener('click', () => this._jogHome());
+  }
+
+  _jogSeek(delta) {
+    const a = this.audio;
+    if (!a || !this.track || !Number.isFinite(a.duration)) return;
+    this._seekTo((a.currentTime || 0) + delta);
+  }
+
+  _jogHome() {
+    this._seekTo(0);
+    this.jogAngle = 0;
+    if (this.elJog) this.elJog.style.setProperty('--jog-angle', '0deg');
+    this.showMessage('JOG  ' + this._formatTime(this.audio ? this.audio.currentTime || 0 : 0));
+    this.draw();
   }
 
   _xfadeGain() {
@@ -868,6 +984,7 @@ class Deck {
 
     this._drawDetail(ok, d, cur);
     this._drawConsoleButtons(cur);
+    this._drawJog(ok, d, cur);
     this._updateVu();
     this._updateLEDs();
   }
@@ -907,6 +1024,24 @@ class Deck {
     }
     if (this.elExpelBtn) this.elExpelBtn.disabled = !this.track;
     if (this.elTrackEq) this.elTrackEq.classList.toggle('active', this.eqIndex !== 0);
+  }
+
+  // Anillo = posición de la pista; aguja = giro del plato (marca visual).
+  _drawJog(ok, d, cur) {
+    const el = this.elJog;
+    if (!el) return;
+    if (ok) {
+      el.style.setProperty('--jog-pos', ((cur / d) * 100).toFixed(2) + '%');
+      if (!this._jogDragging) {
+        this.jogAngle = (cur * 45) % 360;
+        el.style.setProperty('--jog-angle', this.jogAngle.toFixed(1) + 'deg');
+      }
+      el.setAttribute('aria-valuenow', String(Math.round((cur / d) * 100)));
+    } else {
+      el.style.setProperty('--jog-pos', '0%');
+      el.setAttribute('aria-valuenow', '0');
+    }
+    if (this.elJogOut) this.elJogOut.textContent = ok ? this._formatTime(cur) : '--:--.-';
   }
 
   _formatShort(seconds) {

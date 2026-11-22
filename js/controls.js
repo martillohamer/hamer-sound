@@ -224,8 +224,95 @@
     }
   }
 
+  // Dial: mando circular para ratón (arrastre, rueda, doble clic = reset).
+  // Sólo escribe una custom property (--dial-turn) y llama a onChange: no toca
+  // ningún nodo de audio ni el crossfader.
+  class Dial {
+    constructor(options = {}) {
+      this.el = options.el || null;
+      if (!this.el) return;
+      this.min = Number.isFinite(Number(options.min)) ? Number(options.min) : 0;
+      this.max = Number.isFinite(Number(options.max)) ? Number(options.max) : 100;
+      if (this.max <= this.min) this.max = this.min + 1;
+      this.step = Number(options.step) > 0 ? Number(options.step) : 1;
+      this.reset = Number.isFinite(Number(options.reset)) ? Number(options.reset) : this.min;
+      this.onChange = typeof options.onChange === 'function' ? options.onChange : null;
+      this.value = this._clamp(Number(options.start));
+      this._dragging = false;
+      this._bind();
+      this._render();
+    }
+
+    _clamp(v) {
+      const n = Number.isFinite(Number(v)) ? Number(v) : this.min;
+      return Math.max(this.min, Math.min(this.max, n));
+    }
+
+    setValue(v, silent = false) {
+      this.value = this._clamp(v);
+      this._render();
+      if (!silent && this.onChange) this.onChange(this.value);
+      return this.value;
+    }
+
+    _render() {
+      const p = (this.value - this.min) / (this.max - this.min);
+      this.el.style.setProperty('--dial-turn', (-135 + p * 270).toFixed(1) + 'deg');
+      this.el.setAttribute('aria-valuenow', String(Math.round(this.value * 10) / 10));
+    }
+
+    _bind() {
+      const el = this.el;
+      el.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.setValue(this.value + (e.deltaY > 0 ? -this.step : this.step));
+      }, { passive: false });
+
+      el.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        e.preventDefault();
+        this._dragging = true;
+        this._sx = e.clientX;
+        this._sy = e.clientY;
+        this._sv = this.value;
+        try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      });
+      el.addEventListener('pointermove', (e) => {
+        if (!this._dragging) return;
+        const span = this.max - this.min;
+        const delta = (this._sy - e.clientY) + (e.clientX - this._sx);
+        this.setValue(this._sv + (delta / 140) * span);
+      });
+      const stop = (e) => {
+        if (!this._dragging) return;
+        this._dragging = false;
+        try { el.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      };
+      el.addEventListener('pointerup', stop);
+      el.addEventListener('pointercancel', stop);
+
+      el.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        this.setValue(this.reset);
+      });
+      el.addEventListener('keydown', (e) => {
+        let v = this.value;
+        switch (e.key) {
+          case 'ArrowUp': case 'ArrowRight': v += this.step; break;
+          case 'ArrowDown': case 'ArrowLeft': v -= this.step; break;
+          case 'Home': v = this.min; break;
+          case 'End': v = this.max; break;
+          default: return;
+        }
+        e.preventDefault();
+        this.setValue(v);
+      });
+    }
+  }
+
   // Exportar globalmente
   window.Fader = Fader;
+  window.Dial = Dial;
 
   // Helper $
   if (typeof $ === 'undefined') {

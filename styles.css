@@ -20,6 +20,59 @@
   --button-bg: #121619;
   --button-border: #4d585f;
   --radius: 8px;
+
+  /* Paleta de piel. Los colores de LED/vúmetro (--led-*, --vu-off) NO se
+     redefinen en las skins: el significado del vúmetro es siempre el mismo. */
+  --glow: #2d353b;
+  --surface-1: #2b3238;
+  --surface-2: #171c20;
+  --surface-3: #0f1214;
+  --accent: #8ec9a2;
+  --accent-2: #4f9a68;
+  --accent-3: #5d6770;
+  --accent-ink: #10201a;
+  --jog-track: #0b1013;
+}
+
+/* ---------- Skins de controladora ----------
+   Sólo sustituyen custom properties: ningún módulo de audio lee estas variables.
+   La skin "silver" reproduce exactamente la paleta original. */
+[data-skin="blue"] {
+  --glow: #123a63; --surface-1: #1e334a; --surface-2: #13243a; --surface-3: #0a1524;
+  --panel: #1a2b40; --panel-hi: #27405c; --grafito: #152437;
+  --plata: #bcd8f2; --aluminio: #e3f0fb; --gris-met: #7d9ab8;
+  --lcd: #a9c4d8; --lcd-ink: #0e2233;
+  --fader-knob: linear-gradient(180deg, #eaf6ff 0%, #8fb9dd 55%, #4b779c 100%);
+  --accent: #5fb6ff; --accent-2: #2d6fa8; --accent-3: #bcd8f2; --accent-ink: #06182a;
+  --jog-track: #0a1420;
+}
+[data-skin="red"] {
+  --glow: #5c1f1f; --surface-1: #40232a; --surface-2: #2a171c; --surface-3: #180d10;
+  --panel: #321a20; --panel-hi: #4a2830; --grafito: #2b171c;
+  --plata: #f0c9c9; --aluminio: #fbe6e6; --gris-met: #b0858a;
+  --lcd: #d8b4b4; --lcd-ink: #331417;
+  --fader-knob: linear-gradient(180deg, #ffeaea 0%, #d69292 55%, #8f4a4a 100%);
+  --accent: #ff8a7a; --accent-2: #a83a3a; --accent-3: #f0c9c9; --accent-ink: #2a0808;
+  --jog-track: #1a0d10;
+}
+[data-skin="dark"] {
+  --glow: #15181b; --surface-1: #1b2024; --surface-2: #0f1316; --surface-3: #07090b;
+  --panel: #111519; --panel-hi: #1e2429; --grafito: #0d1114;
+  --plata: #8e9aa3; --aluminio: #c2ccd3; --gris-met: #5a666e;
+  --lcd: #7d9096; --lcd-ink: #0a1416;
+  --fader-knob: linear-gradient(180deg, #7d8990 0%, #3d484f 55%, #1d252a 100%);
+  --accent: #9ad3ac; --accent-2: #3f7d55; --accent-3: #8e9aa3; --accent-ink: #06120a;
+  --jog-track: #05080a;
+}
+/* Exclusiva Barça: azulgrana con acentos granate y dorado. */
+[data-skin="barca"] {
+  --glow: #122a5e; --surface-1: #1b2743; --surface-2: #111a30; --surface-3: #080d1a;
+  --panel: #141f38; --panel-hi: #23345a; --grafito: #101a30;
+  --plata: #dbe6f7; --aluminio: #eef3fc; --gris-met: #8498bd;
+  --lcd: #b6c8e2; --lcd-ink: #0c1c3a;
+  --fader-knob: linear-gradient(180deg, #fff1c4 0%, #d8b45c 55%, #8a6820 100%);
+  --accent: #ffcf5a; --accent-2: #b8862a; --accent-3: #e0245e; --accent-ink: #241500;
+  --jog-track: #070d1c;
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +85,7 @@ body {
   color: var(--aluminio);
   font: 13px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
   background:
-    radial-gradient(1100px 520px at 50% -12%, #2d353b 0%, transparent 62%),
+    radial-gradient(1100px 520px at 50% -12%, var(--glow) 0%, transparent 62%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, .014) 0 1px, transparent 1px 3px),
     var(--black);
 }
@@ -48,7 +101,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   padding: 10px;
   border: 1px solid #050708;
   border-radius: 12px;
-  background: linear-gradient(180deg, #2b3238 0%, #171c20 55%, #0f1214 100%);
+  background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 55%, var(--surface-3) 100%);
   box-shadow: 0 20px 55px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .09);
 }
 
@@ -63,7 +116,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   padding: 10px 14px;
   border: 1px solid #080a0c;
   border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--panel-hi), #1d2328);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .11), 0 2px 6px rgba(0, 0, 0, .5);
 }
 
@@ -129,6 +182,34 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .top-btn:hover { background: linear-gradient(180deg, #525c64, #2b3238); }
 .top-btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .7); }
 
+/* Selector de piel y estado Web MIDI (cabecera) */
+.skin-picker { display: flex; align-items: center; gap: 6px; color: var(--gris-met); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.skin-picker select, .midi-input {
+  padding: 4px 6px;
+  color: var(--aluminio);
+  border: 1px solid #0a0c0e;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-size: 11px;
+  letter-spacing: normal;
+}
+.midi-status {
+  padding: 5px 8px;
+  color: var(--aluminio);
+  border: 1px solid #0a0c0e;
+  border-radius: 4px;
+  background: #0e1214;
+  font: 700 10px/1.2 "Courier New", monospace;
+  white-space: nowrap;
+  cursor: default;
+}
+.midi-status[data-midi-state="ready"] { color: var(--accent); border-color: var(--accent-2); }
+.midi-status[data-midi-state="connected"] {
+  color: var(--accent-ink);
+  border-color: var(--accent-2);
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+}
+
 /* Reloj de sesión y contador de temas pinchados */
 .session {
   display: flex;
@@ -162,19 +243,20 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .player {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 26px 78px;
-  grid-template-rows: auto auto auto auto auto;
+  grid-template-rows: auto auto auto auto auto auto;
   grid-template-areas:
     "title title title"
     "screen vu pitch"
     "detail detail detail"
     "eq eq eq"
+    "jog jog jog"
     "controls controls controls";
   gap: 10px;
   min-width: 0;
   padding: 12px;
   border: 1px solid #080a0c;
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #333b42 0%, #242a2f 42%, #1a1f23 100%);
+  background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 42%, var(--panel) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 4px 12px rgba(0, 0, 0, .45);
 }
 
@@ -453,6 +535,82 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .eq-btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .7); }
 .eq-reset-all { align-self: center; margin-bottom: 2px; }
 
+/* Jog / dial de posición por deck: arrastre circular, arrastre horizontal y rueda.
+   El anillo usa --jog-pos y la aguja --jog-angle; JS sólo escribe esas dos variables. */
+.jog-block {
+  grid-area: jog;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid #0a0d0f;
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .8);
+}
+.jog-wheel {
+  position: relative;
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border: 2px solid #050708;
+  border-radius: 50%;
+  background: conic-gradient(from -90deg,
+    var(--accent) 0 var(--jog-pos, 0%),
+    var(--jog-track) var(--jog-pos, 0%) 100%);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, .9), 0 2px 5px rgba(0, 0, 0, .6);
+  cursor: grab;
+  touch-action: none;
+}
+.jog-wheel:active { cursor: grabbing; }
+.jog-wheel:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.jog-face {
+  position: absolute;
+  inset: 7px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #0a0c0e;
+  border-radius: 50%;
+  background: var(--fader-knob);
+  box-shadow: inset 0 1px 4px rgba(255, 255, 255, .35), 0 1px 3px rgba(0, 0, 0, .7);
+}
+.jog-marker { position: absolute; inset: 0; border-radius: 50%; transform: rotate(var(--jog-angle, 0deg)); }
+.jog-marker::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 3px;
+  height: 13px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--accent-3);
+  box-shadow: 0 0 4px rgba(0, 0, 0, .7);
+}
+.jog-cap { color: #16202a; font: 700 9px/1 "Courier New", monospace; letter-spacing: .1em; }
+.jog-info { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.jog-label { color: var(--gris-met); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.jog-readout {
+  min-width: 74px;
+  padding: 3px 7px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #0d1113;
+  color: var(--accent);
+  font: 700 14px/1.2 "Courier New", monospace;
+}
+.jog-reset {
+  padding: 2px 7px;
+  color: var(--plata);
+  border: 1px solid #0a0c0e;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #3c454b, #22282c);
+  font-size: 9px;
+  font-weight: 700;
+}
+.jog-reset:hover { background: linear-gradient(180deg, #4c565d, #2b3237); }
+
 /* Transporte */
 .player-controls { grid-area: controls; min-width: 0; }
 
@@ -494,7 +652,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   padding: 12px 16px 14px;
   border: 1px solid #080a0c;
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #30383e, #1c2125);
+  background: linear-gradient(180deg, var(--surface-1), var(--surface-2));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 4px 12px rgba(0, 0, 0, .4);
 }
 
@@ -636,7 +794,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
-  background: linear-gradient(180deg, #414b52, #2d353a);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
   border-bottom: 1px solid #0a0d0f;
 }
 .lib-name { color: #eef3f5; font-weight: 700; }
@@ -788,7 +946,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   gap: 8px;
   padding: 8px 10px;
   border-top: 1px solid #080a0c;
-  background: linear-gradient(180deg, #363f45, #242a2e);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
 }
 .lib-controls > input[type="text"] {
   flex: 1 1 200px;
@@ -886,12 +1044,21 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   background: linear-gradient(180deg, #48525a, #252b2f);
 }
 
+/* Tabla de mapeo MIDI (plantilla Numark NV II) dentro de cfg */
+.midi-map { margin-top: 14px; border-top: 1px solid #101418; padding-top: 10px; }
+.midi-map summary { color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; }
+.midi-map-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 10px; }
+.midi-map-table th, .midi-map-table td { padding: 3px 4px; border-bottom: 1px solid #1b2226; text-align: left; }
+.midi-map-table th { color: var(--gris-met); font-size: 9px; letter-spacing: .06em; }
+.midi-map-table td { color: #b9c4ca; font-family: "Courier New", monospace; }
+.midi-note { color: var(--gris-met) !important; font-size: 10px !important; font-style: italic; }
+
 /* ---------- ZONA C2: banco de efectos ---------- */
 .fx-rack {
   padding: 12px 16px 14px;
   border: 1px solid #080a0c;
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #262d32, #171c20);
+  background: linear-gradient(180deg, var(--grafito), var(--surface-2));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 4px 12px rgba(0, 0, 0, .4);
 }
 .fx-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -928,6 +1095,43 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   letter-spacing: .12em;
 }
 .fx-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+.fx-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: center; gap: 8px; min-width: 0; }
+
+/* Mando giratorio: arrastre vertical/horizontal, rueda y doble clic = reset */
+.dial {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #050708;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 28%, var(--panel-hi), #080b0d 78%);
+  box-shadow: inset 0 0 5px rgba(0, 0, 0, .9), 0 2px 4px rgba(0, 0, 0, .6);
+  cursor: ns-resize;
+  touch-action: none;
+}
+.dial:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dial-face {
+  position: absolute;
+  inset: 3px;
+  border: 1px solid #0a0c0e;
+  border-radius: 50%;
+  background: var(--fader-knob);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, .4);
+  transform: rotate(var(--dial-turn, -135deg));
+}
+.dial-pointer {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 2px;
+  height: 9px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 3px rgba(0, 0, 0, .6);
+}
 .fx-seg button, .fx-toggle, .fx-motion button {
   padding: 5px 2px;
   color: var(--plata);
@@ -1110,4 +1314,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   .eq-reset-all { grid-column: 1 / -1; }
   .session { gap: 6px; padding: 4px 7px; }
   .session-value { font-size: 13px; }
+  .top-controls { gap: 6px; }
+  .jog-wheel { flex-basis: 60px; width: 60px; height: 60px; }
+  .jog-readout { min-width: 62px; font-size: 12px; }
 }
