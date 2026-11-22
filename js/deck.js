@@ -1,337 +1,615 @@
-// deck.js — Clase Deck con máquina de estados y UI física
+// deck.js — Clase Deck: audio real, máquina de estados y UI física
 'use strict';
 
-// Helper $ (debe existir antes; definido en seg7.js o main.js)
 if (typeof $ === 'undefined') {
-  window.$ = (sel, r = document) => { const e = r.querySelector(sel); if (!e) console.error('Falta elemento en el HTML:', sel); return e; };
+  window.$ = (sel, r = document) => {
+    const e = r.querySelector(sel);
+    if (!e) console.error('Falta elemento en el HTML:', sel);
+    return e;
+  };
 }
+
+const EQ_PRESETS = [
+  { name: 'FLAT', low: 0, high: 0 },
+  { name: 'BASS', low: 6, high: -2 },
+  { name: 'TREBLE', low: -2, high: 6 },
+  { name: 'VOCAL', low: -3, high: 3 }
+];
 
 class Deck {
   constructor(options = {}) {
-    this.id = options.id || 'a'; // 'a' o 'b' siempre minúscula
-    this.root = options.root; // elemento DOM del player
-    this.ctx = options.ctx; // contexto de audio
-    this.xfade = options.xfade; // objeto crossfader {A,gain,B,gain}
-    this.masterGain = options.masterGain; // nodo gain master
+    this.id = (options.id || 'a').toLowerCase(); // 'a' | 'b'
+    this.root = options.root || null;
+    this.ctx = options.ctx || window.ctx || null;
+    this.xfade = options.xfade || window.xfade || null;
 
-    // Estado de la máquina de estados
-    this.state = 'CLOSED'; // CLOSED → LOADING → READY → PLAYING ↔ PAUSED → ENDED
-    this.track = null; // {id, name, title, artist, url, dur}
-    this.audio = null; // elemento HTMLAudioElement
+    this.state = 'CLOSED';
+    this.track = null;
+    this.audio = null;
+
     this.analyser = null;
-    this.lv = 0; // nivel de volumen para el vúmetro
-    this.playbackRateBackup = 1; // para pausar sin cambiar rate
+    this.srcNode = null;
+    this.trimGain = null;
+    this.chGain = null;
+    this.eqLow = null;
+    this.eqHigh = null;
+    this.usingGraph = false;
 
-    // Referencias a elementos DOM (se poblarán después)
-    this.elStatus = null; // "CLOSED", "PLAYING", "PAUSED", "ENDED"
-    this.elElapsed = null; // dígitos Elapsed
-    this.elRemaining = null; // dígitos Remaining
-    this.elMessage = null; // texto de mensaje/título
-    this.elVuMeter = null; // canvas vúmetro
-    this.elPitchDisplay = null; // display "0.0%"
-    this.elPitchFader = null; // input range pitch
-    this.elCueBtn = null; // botón CUE
-    this.elPlayBtn = null; // botón Play/Pausa
-    this.elExpelBtn = null; // botón expulsar
-    this.elTrackName = null; // nombre de pista en la lista
-    this.elLedStrip = null; // tira de 12 LEDs
+    this.volume = 0.8;
+    this.trim = 1;
+    this.pitch = 0;          // -24 .. +24 (%)
+    this.cuePoint = 0;
+    this.lv = 0;
+    this.eqIndex = 0;
+    this.autoplayAfterLoad = false;
 
-    // Inicializar DOM referencias y HTML del player
     this._initDOM();
     this._initAudio();
+    this._tick = this._tick.bind(this);
+    this._raf = requestAnimationFrame(this._tick);
   }
 
+  // ---------- DOM ----------
   _initDOM() {
-    // Crear HTML del player si no existe
-    if (!this.root || this.root.children.length === 0) {
-      this.root.innerHTML = this._playerHTML();
-    }
+    const r = this.root;
+    if (!r) return;
+    const q = (sel) => r.querySelector(sel);
 
-    // Cachear referencias
-    this.elStatus = $('#player-' + this.id + '-status');
-    this.elElapsed = $('#player-' + this.id + '-elapsed');
-    this.elRemaining = $('#player-' + this.id + '-remaining');
-    this.elMessage = $('#player-' + this.id + '-msg');
-    this.elVuMeter = $('#player-' + this.id + '-vu');
-    this.elPitchDisplay = $('#player-' + this.id + '-pitch');
-    this.elPitchFader = $('#player-' + this.id + '-pitch-fader');
-    this.elCueBtn = $('#player-' + this.id + '-cue');
-    this.elPlayBtn = $('#player-' + this.id + '-play');
-    this.elExpelBtn = $('#player-' + this.id + '-expel▲');
-    this.elLedStrip = $('#player-' + this.id + '-leds');
+    this.elStatus = q('#player-' + this.id + '-status');
+    this.elElapsed = q('#player-' + this.id + '-elapsed');
+    this.elRemaining = q('#player-' + this.id + '-remaining');
+    this.elMessage = q('#player-' + this.id + '-msg');
+    this.elVuMeter = q('.player-vu');
+    this.elPitchDisplay = q('#player-' + this.id + '-pitch');
+    this.elPitchFader = q('#player-' + this.id + '-pitch-fader');
+    this.elCueBtn = q('[data-cue]');
+    this.elPlayBtn = q('[data-play]');
+    this.elExpelBtn = q('[data-expel]');
+    this.elLedStrip = q('.led-strip');
+    this.elProgress = q('.lcd-progress');
 
-    // Botones de pista
-    this.elTrackPrev = $('#player-' + this.id + '-prev');
-    this.elTrackNext = $('#player-' + this.id + '-ff'); // ff es "forward" en el HTML original
-    // Note: the HTML uses data-track-rew and data-track-ff, let's map them
-    this.elTrackRew = $('#player-' + this.id + '-rew');
-    this.elTrackFf = $('#player-' + this.id + '-ff');
+    this.btnPitchMinus = q('[data-pitch-minus]');
+    this.btnPitchPlus = q('[data-pitch-plus]');
+    this.btnPitchDefault = q('[data-pitch-default]');
+    this.elTrackPrev = q('[data-track-prev]');
+    this.elTrackEq = q('[data-track-eq]');
+    this.elTrackRew = q('[data-track-rew]');
+    this.elTrackFf = q('[data-track-ff]');
+
+    this.vuSegments = this.elVuMeter
+      ? Array.from(this.elVuMeter.querySelectorAll('.vu-segment'))
+      : [];
+    this.leds = this.elLedStrip
+      ? Array.from(this.elLedStrip.querySelectorAll('.led'))
+      : [];
   }
 
-  _playerHTML() {
-    const ledHTML = Array(12).fill('<div class="led"></div>').join('');
-    return `<div class="lcd"><div class="lcd-bar"><i></i></div><div class="lcd-status">CLOSED</div><div class="lcd-timer"><span class="seg7-el">00:00.0</span>/<span class="seg7-re">-00:00.0</span></div><div class="lcd-msg"></div></div>
-<button class="lcd-info">INFO</button>
-<div class="vu-meter"><div class="vu-segment" data-level="-15"></div><div class="vu-segment" data-level="-13"></div><div class="vu-segment" data-level="-10"></div><div class="vu-segment" data-level="-8"></div><div class="vu-segment" data-level="-5"></div><div class="vu-segment" data-level="-3"></div><div class="vu-segment" data-level="-3"></div><div class="vu-segment" data-level="-8"></div><div class="vu-segment" data-level="-10"></div><div class="vu-segment" data-level="-13"></div><div class="vu-segment" data-level="-15"></div><div class="vu-segment" data-level="-15"></div></div>
-<div class="pitch-block"><span class="pitch-label">PITCH</span><span class="pitch-value" id="player-` + this.id + `-pitch">0.0%</span><button data-pitch-minus>−</button><input type="range" class="pitch-fader" min="-24" max="24" step=".5" value="0" data-pitch-fader><button data-pitch-plus>+</button><button data-pitch-default◆>◆</button></div>
-<div class="player-footer"><span class="player-label">PLAYER ` + this.id + `</span><div class="led-strip">` + ledHTML + `</div><div class="player-controls"><button data-track-prev>|◀ 0 ▶|</button><button data-cue>CUE</button><button data-play>▶❚❚</button><button data-expel▲ style="background:var(--expel-violet);color:#fff">▲</button><button data-track-eq>=</button><button data-track-rew>«</button><button data-track-ff">»</button></div></div>`;
-  }
-
+  // ---------- Audio ----------
   _initAudio() {
     const a = this.audio = new Audio();
     a.preload = 'metadata';
     a.loop = false;
+    // Con grafo Web Audio el volumen se controla en chGain; sin grafo, en el elemento.
+    a.volume = 1;
 
-    // Connect to Web Audio graph
-    const src = this.ctx.createMediaElementSource(a);
-    this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 256;
+    const xfGain = this._xfadeGain();
+    const Ctx = window.initAudio ? window.initAudio() : (window.ctx || this.ctx);
+    if (Ctx) this.ctx = Ctx;
 
-    // Connect: audio → vol → an → crossfader
-    const vol = this.ctx.createGain();
-    vol.gain.value = 0.8;
-    src.connect(vol);
-    vol.connect(this.analyser);
-    this.analyser.connect(this.xfade[this.id]); // conecta al crossfader A o B
+    if (this.ctx && xfGain && typeof this.ctx.createMediaElementSource === 'function') {
+      try {
+        this.srcNode = this.ctx.createMediaElementSource(a);
+        this.trimGain = this.ctx.createGain();
+        this.chGain = this.ctx.createGain();
+        this.eqLow = this.ctx.createBiquadFilter();
+        this.eqHigh = this.ctx.createBiquadFilter();
+        this.analyser = this.ctx.createAnalyser();
 
-    // Event listeners
-    a.addEventListener('canplay', () => { this.state = 'READY'; this.draw(); });
-    a.addEventListener('playing', () => { this.state = 'PLAYING'; this.draw(); });
-    a.addEventListener('pause', () => { this.state = 'PAUSED'; this.draw(); });
-    a.addEventListener('ended', () => { this.state = 'ENDED'; a.currentTime = 0; this.draw(); });
-    a.addEventListener('error', () => { this.state = 'ERROR'; this.draw(); });
+        this.trimGain.gain.value = this.trim;
+        this.chGain.gain.value = this.volume;
+        this.eqLow.type = 'lowshelf';
+        this.eqLow.frequency.value = 200;
+        this.eqHigh.type = 'highshelf';
+        this.eqHigh.frequency.value = 3200;
+        this.analyser.fftSize = 256;
 
-    // Pitch fader
+        this.srcNode.connect(this.trimGain);
+        this.trimGain.connect(this.eqLow);
+        this.eqLow.connect(this.eqHigh);
+        this.eqHigh.connect(this.chGain);
+        this.chGain.connect(this.analyser);
+        this.analyser.connect(xfGain);
+
+        this.usingGraph = true;
+      } catch (err) {
+        console.warn('Deck ' + this.id + ': no se pudo montar el grafo Web Audio', err);
+        this.usingGraph = false;
+      }
+    }
+
+    if (!this.usingGraph) {
+      console.warn('Deck ' + this.id + ': audio sin grafo (crossfader no aplicable al sonido).');
+    }
+
+    // Eventos del elemento de audio
+    a.addEventListener('loadedmetadata', () => { this.applyPitch(); this.draw(); });
+    a.addEventListener('canplay', () => { if (this.state === 'LOADING') this.setState('READY'); });
+    a.addEventListener('play', () => { this.setState('PLAYING'); });
+    a.addEventListener('playing', () => { this.setState('PLAYING'); });
+    a.addEventListener('pause', () => { if (this.state === 'PLAYING') this.setState('PAUSED'); });
+    a.addEventListener('timeupdate', () => this.draw());
+    a.addEventListener('ended', () => this._onEnded());
+    a.addEventListener('error', () => {
+      if (!a.src) return;
+      this.setState('ERROR');
+      this.showMessage('NOT LOADED! No se pudo decodificar el archivo');
+    });
+
+    // Pitch
     if (this.elPitchFader) {
-      this.elPitchFader.addEventListener('input', () => {
-        const v = +this.elPitchFader.value;
-        this.audio.playbackRate = 1 + v / 100;
-        this.elPitchDisplay.textContent = (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+      this.pitch = Number(this.elPitchFader.value) || 0;
+      this.elPitchFader.addEventListener('input', () => this.setPitch(Number(this.elPitchFader.value)));
+    }
+    if (this.btnPitchMinus) this.btnPitchMinus.addEventListener('click', () => this.nudgePitch(-1));
+    if (this.btnPitchPlus) this.btnPitchPlus.addEventListener('click', () => this.nudgePitch(1));
+    if (this.btnPitchDefault) this.btnPitchDefault.addEventListener('click', () => this.setPitch(0));
+
+    // Transporte
+    if (this.elCueBtn) this.elCueBtn.addEventListener('click', () => this.cue());
+    if (this.elPlayBtn) this.elPlayBtn.addEventListener('click', () => this._playToggle());
+    if (this.elExpelBtn) this.elExpelBtn.addEventListener('click', () => this.eject());
+    if (this.elTrackPrev) this.elTrackPrev.addEventListener('click', () => this._adjacent(-1));
+    if (this.elTrackEq) this.elTrackEq.addEventListener('click', () => this._cycleEq());
+
+    // Ratón: drag & drop, LCD, barra de progreso, rueda de pitch y «/» con mantenido
+    this._bindPointerUI();
+  }
+
+  // ---------- Interacción con el ratón ----------
+  _bindPointerUI() {
+    const r = this.root;
+    if (!r) return;
+    r.classList.add('drop-target');
+
+    const dragTypes = (e) => {
+      const dt = e.dataTransfer;
+      const types = dt ? Array.from(dt.types || []) : [];
+      return {
+        files: types.includes('Files') || !!(dt && dt.files && dt.files.length),
+        row: types.includes('text/plain')
+      };
+    };
+
+    // Un archivo del explorador o una fila de la biblioteca pueden caer en este deck.
+    // stopPropagation() evita que el manejador global de la app vuelva a añadir el archivo.
+    const acceptDrag = (e) => {
+      const t = dragTypes(e);
+      if (!t.files && !t.row) return false;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      r.classList.add('drag-over');
+      return true;
+    };
+    r.addEventListener('dragenter', acceptDrag);
+    r.addEventListener('dragover', acceptDrag);
+    r.addEventListener('dragleave', (e) => {
+      if (!e.relatedTarget || !r.contains(e.relatedTarget)) r.classList.remove('drag-over');
+    });
+    r.addEventListener('drop', (e) => {
+      const t = dragTypes(e);
+      if (!t.files && !t.row) return;
+      e.preventDefault();
+      e.stopPropagation();
+      r.classList.remove('drag-over');
+
+      // Archivos: se añaden a la biblioteca y el primero se carga en este deck.
+      if (t.files && e.dataTransfer.files && e.dataTransfer.files.length) {
+        const lib = window.Library;
+        const tracks = lib && typeof lib.addFiles === 'function'
+          ? lib.addFiles(e.dataTransfer.files) : [];
+        if (tracks.length) {
+          if (typeof lib.select === 'function') lib.select(tracks[0]);
+          this.load(tracks[0]);
+          this.showMessage(tracks[0].name);
+          window.setStatus && window.setStatus('Player ' + this.id.toUpperCase() + ' ← ' + tracks[0].title);
+        }
+        return;
+      }
+
+      // Fila de la biblioteca: arrastrar y soltar también carga en este deck.
+      const id = e.dataTransfer && e.dataTransfer.getData('text/plain');
+      if (!id || !window.Library) return;
+      const track = window.Library.tracks.find(t => String(t.id) === String(id));
+      if (track) {
+        window.Library.select(track);
+        this.load(track);
+        this.showMessage(track.name);
+        window.setStatus && window.setStatus(track.title + ' → Player ' + this.id.toUpperCase());
+      }
+    });
+
+    // Clic en una LCD vacía (CLOSED): selector de archivos directo para este deck.
+    const lcd = r.querySelector('.lcd');
+    this.elLcd = lcd;
+    if (lcd) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.opus';
+      input.multiple = true;
+      input.hidden = true;
+      input.className = 'deck-file-input';
+      r.appendChild(input);
+      this.elFileInput = input;
+
+      input.addEventListener('change', () => {
+        const lib = window.Library;
+        const tracks = lib && typeof lib.addFiles === 'function'
+          ? lib.addFiles(input.files) : [];
+        if (tracks.length) {
+          if (typeof lib.select === 'function') lib.select(tracks[0]);
+          this.load(tracks[0]);
+          this.showMessage(tracks[0].name);
+        }
+        input.value = '';
       });
+
+      lcd.addEventListener('click', (e) => {
+        if (e.target.closest('.lcd-info')) return;              // INFO tiene su propio listener
+        if (this.track && e.target.closest('.lcd-timer')) return; // el timer es zona de seek
+        if (this.track) return;                                 // LCD ocupada: no se recarga
+        e.preventDefault();
+        input.click();
+      });
+
+      const timer = r.querySelector('.lcd-timer');
+      if (timer) this._bindLcdSeek(timer);
     }
 
-    // CUE button
-    if (this.elCueBtn) {
-      this.elCueBtn.addEventListener('click', () => this._cueAction());
-    }
-
-    // Play/Pausa
-    if (this.elPlayBtn) {
-      this.elPlayBtn.addEventListener('click', () => this._playToggle());
-    }
-
-    // Expel button (eject)
-    if (this.elExpelBtn) {
-      this.elExpelBtn.addEventListener('click', () => this._eject());
-    }
-
-    // Track prev/next
-    if (this.elTrackPrev) {
-      this.elTrackPrev.addEventListener('click', () => this._trackPrev());
-    }
-    if (this.elTrackFf) {
-      this.elTrackFf.addEventListener('click', () => this._trackNext());
-    }
-    if (this.elTrackRew) {
-      this.elTrackRew.addEventListener('click', () => this._trackRewind());
-    }
-    if (this.elTrackNext) {
-      this.elTrackNext.addEventListener('click', () => this._trackForward());
-    }
-  }
-
-  _cueAction() {
-    const a = this.audio;
-    if (!a.src) return;
-
-    // Si está en pausa y lejos del punto cue, fija el cue en la posición actual
-    if (this.state === 'PAUSED' && a.currentTime > 0) {
-      // Preescucha: marcar posición actual como cue
-      this._cuePosition = a.currentTime;
-    }
-
-    // Si se mantiene pulsado (pointerdown) hace preescucha y al soltar vuelve al cue
-    // Simplificado: en click, si hay cue marcado, volver a él
-    if (this._cuePosition && a.currentTime !== this._cuePosition) {
-      a.currentTime = this._cuePosition;
-      this._cuePosition = null;
-    }
-
-    // Si se mantiene pulsado durante >5s no marca como reproducida
-    // (handled by library state machine)
-  }
-
-  _playToggle() {
-    const a = this.audio;
-    if (!a.src) {
-      // Try to play the current track
-      if (this.track && this.track.url) {
-        this.load(this.track);
-      }
-      return;
-    }
-
-    if (this.state === 'PLAYING') {
-      a.pause();
-      this.state = 'PAUSED';
-    } else if (this.state === 'PAUSED') {
-      a.play().then(() => { this.state = 'PLAYING'; });
-    } else if (this.state === 'ENDED') {
-      // Reiniciar y jugar
-      a.currentTime = 0;
-      a.play();
-      this.state = 'PLAYING';
-    } else if (this.state === 'CLOSED' || this.state === 'LOADING') {
-      // Cargar y jugar
-      if (this.track && this.track.url) {
-        this.load(this.track);
-        a.play().then(() => { this.state = 'PLAYING'; });
+    // Rueda del ratón sobre el fader de pitch (y sobre todo el bloque PITCH).
+    if (this.elPitchFader) {
+      const onPitchWheel = (e) => {
+        e.preventDefault();
+        const step = Number(this.elPitchFader.step) || 0.5;
+        this.nudgePitch((e.deltaY > 0 ? -1 : 1) * step);
+      };
+      this.elPitchFader.addEventListener('wheel', onPitchWheel, { passive: false });
+      const pitchBlock = r.querySelector('.pitch-block');
+      if (pitchBlock) {
+        pitchBlock.addEventListener('wheel', (e) => {
+          if (e.target !== this.elPitchFader) onPitchWheel(e);
+        }, { passive: false });
       }
     }
+
+    // « y »: clic = ±10 s; mantener pulsado = saltos cada vez mayores.
+    this._bindSeekHold(this.elTrackRew, -1);
+    this._bindSeekHold(this.elTrackFf, 1);
+  }
+
+  _bindLcdSeek(timer) {
+    let dragging = false;
+    const seekFromEvent = (e) => {
+      const a = this.audio;
+      if (!a || !Number.isFinite(a.duration) || a.duration <= 0) return;
+      const box = timer.getBoundingClientRect();
+      if (!box || !box.width) return;
+      const ratio = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
+      this._seekTo(ratio * a.duration);
+    };
+    timer.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (!this.track || !Number.isFinite(this.audio.duration)) return;
+      dragging = true;
+      try { timer.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      seekFromEvent(e);
+      e.preventDefault();
+    });
+    timer.addEventListener('pointermove', (e) => { if (dragging) seekFromEvent(e); });
+    const stop = (e) => {
+      dragging = false;
+      try { timer.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    };
+    timer.addEventListener('pointerup', stop);
+    timer.addEventListener('pointercancel', stop);
+  }
+
+  _bindSeekHold(btn, dir) {
+    if (!btn) return;
+    let delayTimer = null, repeatTimer = null, step = 10, repeated = false;
+
+    const stop = () => {
+      if (delayTimer) { clearTimeout(delayTimer); delayTimer = null; }
+      if (repeatTimer) { clearTimeout(repeatTimer); repeatTimer = null; }
+    };
+    const start = (e) => {
+      if (e.type === 'mousedown' && e.button !== 0) return;
+      stop();
+      step = 10;
+      repeated = false;
+      delayTimer = setTimeout(() => {
+        const tick = () => {
+          this.seek(dir * step);
+          step = Math.min(120, step * 1.6);
+          repeated = true;
+          repeatTimer = setTimeout(tick, 90);
+        };
+        tick();
+      }, 250);
+    };
+
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('touchstart', start, { passive: false });
+    btn.addEventListener('mouseleave', stop);
+    document.addEventListener('mouseup', stop);
+    document.addEventListener('touchend', stop);
+    btn.addEventListener('click', () => {
+      stop();
+      if (!repeated) this.seek(dir * 10);
+      repeated = false;
+    });
+  }
+
+  _xfadeGain() {
+    if (!this.xfade) return null;
+    const key = this.id.toUpperCase();
+    const slot = this.xfade[key] || this.xfade[this.id];
+    return slot ? slot.gain : null;
+  }
+
+  // ---------- Estados ----------
+  setState(s) {
+    this.state = s;
+    if (this.elStatus) this.elStatus.textContent = s;
     this.draw();
   }
 
-  _eject() {
-    this.state = 'CLOSED';
-    this.audio = new Audio();
-    this.audio.preload = 'metadata';
-    this.elStatus.textContent = 'CLOSED';
-    this.elMessage.textContent = '-- sin pista --';
-    this.elElapsed.textContent = '00:00.0';
-    this.elRemaining.textContent = '-00:00.0';
-    // Apagar LEDs
-    if (this.elLedStrip) {
-      Array.from(this.elLedStrip.children).forEach(led => led.style.background = 'var(--led-off)');
-    }
-    this.draw();
+  showMessage(text) {
+    if (this.elMessage) this.elMessage.textContent = text;
   }
 
-  load(track) {
-    if (!track || !track.url) return;
+  get info() {
+    if (!this.track) return '';
+    const d = this.audio && Number.isFinite(this.audio.duration) ? this._formatTime(this.audio.duration) : '--:--.-';
+    return [this.track.artist, this.track.title, d].filter(Boolean).join(' · ');
+  }
+
+  // ---------- Carga y reproducción ----------
+  load(track, autoplay = false) {
+    if (!track || !track.url) return Promise.resolve(false);
     this.track = track;
+    this.autoplayAfterLoad = autoplay;
+    this.cuePoint = 0;
+    this.setState('LOADING');
+    this.showMessage(track.name || '-- cargando --');
     this.audio.src = track.url;
     this.audio.load();
-    this.state = 'LOADING';
-    this.draw();
+    this.applyPitch();
 
-    // Actualizar UI
-    this.elMessage.textContent = track.name || '-- cargando --';
-    this.elStatus.textContent = 'LOADING';
+    return new Promise((resolve) => {
+      const done = (ok) => {
+        this.audio.removeEventListener('canplay', onReady);
+        this.audio.removeEventListener('error', onErr);
+        if (ok && this.autoplayAfterLoad) {
+          this.autoplayAfterLoad = false;
+          this.play();
+        }
+        resolve(ok);
+      };
+      const onReady = () => done(true);
+      const onErr = () => done(false);
+      this.audio.addEventListener('canplay', onReady);
+      this.audio.addEventListener('error', onErr);
+    });
   }
 
   play() {
-    const a = this.audio;
-    if (!a.src) return;
-    if (this.state === 'READY' || this.state === 'PAUSED' || this.state === 'ENDED') {
-      a.play().then(() => { this.state = 'PLAYING'; this.draw(); });
+    if (!this.audio.src) {
+      if (this.track && this.track.url) return this.load(this.track, true);
+      return Promise.resolve(false);
     }
+    const p = this.audio.play();
+    if (!p) { this.setState('PLAYING'); return Promise.resolve(true); }
+    return p.then(() => { this.setState('PLAYING'); return true; })
+      .catch((err) => {
+        // Autoplay bloqueado o archivo no reproducible
+        this.showMessage('PLAY ERROR: ' + (err && err.name ? err.name : 'desconocido'));
+        return false;
+      });
   }
 
   pause() {
-    const a = this.audio;
-    if (a && !a.paused) a.pause();
-    this.state = 'PAUSED';
-    this.draw();
+    if (this.audio && !this.audio.paused) this.audio.pause();
+    if (this.state === 'PLAYING') this.setState('PAUSED');
   }
 
   stop() {
-    const a = this.audio;
-    if (a) {
-      a.currentTime = 0;
-      a.pause();
+    if (this.audio) {
+      this.audio.pause();
+      try { this.audio.currentTime = 0; } catch (_) { /* ignore */ }
     }
-    this.state = 'CLOSED';
+    this.setState('CLOSED');
+  }
+
+  eject() {
+    this.stop();
+    if (this.audio) {
+      this.audio.removeAttribute('src');
+      this.audio.load();
+    }
+    this.track = null;
+    this.cuePoint = 0;
+    this.showMessage('-- sin pista --');
+    if (this.elMessage) this.elMessage.textContent = '-- sin pista --';
+    this.leds.forEach(led => { led.style.background = 'var(--led-off)'; });
+  }
+
+  _playToggle() {
+    if (!this.audio.src) { this.play(); return; }
+    if (this.state === 'PLAYING') this.pause();
+    else this.play();
+  }
+
+  _onEnded() {
+    this.setState('ENDED');
+    this.leds.forEach(led => { led.style.background = 'var(--led-red)'; });
+    if (window.Library) window.Library.markPlayed(this.track);
+    if (typeof window.onDeckEnded === 'function') window.onDeckEnded(this);
+  }
+
+  // ---------- CUE ----------
+  cue() {
+    if (!this.audio.src || !this.track) {
+      this.showMessage('NOT LOADED! Invalid floating point operation');
+      return;
+    }
+    const t = this.audio.currentTime || 0;
+    const atCue = Math.abs(t - this.cuePoint) < 0.2;
+
+    if (!atCue) {
+      // Volver al punto cue
+      this._seekTo(this.cuePoint);
+      this.showMessage('CUE  ' + this._formatTime(this.cuePoint));
+    } else if (this.state === 'PLAYING') {
+      // En el punto cue y sonando: pausar (comportamiento clásico de deck)
+      this.pause();
+      this.showMessage('CUE  ' + this._formatTime(this.cuePoint) + '  (PAUSA)');
+    } else {
+      // En el punto cue y parado: marcar aquí el nuevo punto cue
+      this.cuePoint = t;
+      this.showMessage('CUE SET  ' + this._formatTime(t));
+    }
+  }
+
+  // ---------- Pitch ----------
+  setPitch(v) {
+    v = Math.max(-24, Math.min(24, Number(v) || 0));
+    this.pitch = v;
+    if (this.elPitchFader) this.elPitchFader.value = String(v);
+    if (this.elPitchDisplay) {
+      this.elPitchDisplay.textContent = (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+    }
+    this.applyPitch();
+    return v;
+  }
+
+  applyPitch() {
+    if (this.audio) this.audio.playbackRate = 1 + this.pitch / 100;
+  }
+
+  nudgePitch(delta) { this.setPitch(this.pitch + delta); }
+  resetPitch() { this.setPitch(0); }
+
+  // ---------- Volumen / trim / EQ ----------
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, Number(v) || 0));
+    if (this.usingGraph && this.chGain) this.chGain.gain.value = this.volume;
+    else if (this.audio) this.audio.volume = this.volume * this.trim;
+  }
+
+  setTrim(v) {
+    this.trim = Math.max(0, Math.min(1, Number(v) || 0));
+    if (this.usingGraph && this.trimGain) this.trimGain.gain.value = this.trim;
+    else if (this.audio) this.audio.volume = this.volume * this.trim;
+  }
+
+  _cycleEq() {
+    this.eqIndex = (this.eqIndex + 1) % EQ_PRESETS.length;
+    const p = EQ_PRESETS[this.eqIndex];
+    if (this.eqLow) this.eqLow.gain.value = p.low;
+    if (this.eqHigh) this.eqHigh.gain.value = p.high;
+    if (this.elTrackEq) this.elTrackEq.classList.toggle('active', this.eqIndex !== 0);
+    this.showMessage('EQ  ' + p.name);
+  }
+
+  // ---------- Navegación / seek ----------
+  seek(delta) {
+    if (!this.audio.src || !Number.isFinite(this.audio.duration)) return;
+    this._seekTo(this.audio.currentTime + delta);
+  }
+
+  _seekTo(t) {
+    if (!Number.isFinite(this.audio.duration)) return;
+    const d = this.audio.duration;
+    try { this.audio.currentTime = Math.max(0, Math.min(d - 0.05, t)); } catch (_) { /* ignore */ }
     this.draw();
   }
 
-  // Actualizar display cada frame
+  _adjacent(dir) {
+    if (window.Library && typeof window.Library.loadAdjacent === 'function') {
+      window.Library.loadAdjacent(this.id, dir);
+    }
+  }
+
+  // ---------- Bucle de dibujo ----------
+  _tick() {
+    this.draw();
+    this._raf = requestAnimationFrame(this._tick);
+  }
+
   draw() {
     const a = this.audio;
-    const d = a.duration || 0;
+    if (!a) return;
+    const d = a.duration;
     const ok = Number.isFinite(d) && d > 0;
+    const cur = a.currentTime || 0;
 
-    // Elapsed time
-    this.elElapsed.textContent = ok ? this._formatTime(a.currentTime) : '00:00.0';
+    if (this.elElapsed) this.elElapsed.textContent = ok ? this._formatTime(cur) : '00:00.0';
+    if (this.elRemaining) this.elRemaining.textContent = ok ? '-' + this._formatTime(d - cur) : '-00:00.0';
+    if (this.elProgress) this.elProgress.style.width = ok ? (cur / d * 100).toFixed(2) + '%' : '0%';
+    if (this.elStatus) this.elStatus.textContent = this.state;
+    if (this.elLcd) this.elLcd.classList.toggle('lcd-loadable', !this.track);
 
-    // Remaining time
-    this.elRemaining.textContent = ok ? '-' + this._formatTime(d - a.currentTime).slice(0) : '-00:00.0';
-
-    // Progress bar width
-    $('i', this.elElapsed.parentNode).style.width = ok ? (a.currentTime / d * 100) + '%' : '0%';
-
-    // Vúmetro
-    this._updateVuMeter();
-
-    // LEDs - encender los últimos 36 segundos (un LED cada 3s)
+    this._updateVu();
     this._updateLEDs();
-
-    // Estado de texto
-    this.elStatus.textContent = this.state;
   }
 
   _formatTime(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    const s = Math.max(0, Number(seconds) || 0);
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    const tenth = Math.floor((s % 1) * 10);
+    return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0') + '.' + tenth;
   }
 
-  _updateVuMeter() {
-    if (!this.analyser) return;
-    const b = new Uint8Array(this.analyser.frequencyBinCount);
-    this.analyser.getByteTimeDomainData(b);
+  _updateVu() {
+    let level = 0;
+    if (this.analyser && this.usingGraph) {
+      const buf = new Uint8Array(this.analyser.frequencyBinCount);
+      this.analyser.getByteTimeDomainData(buf);
+      let peak = 0;
+      for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+      level = peak / 128;
+    } else if (this.state === 'PLAYING') {
+      // Vúmetro visual aunque no haya Web Audio
+      level = 0.35 + 0.22 * Math.abs(Math.sin(performance.now() / 130 + (this.id === 'b' ? 1 : 0)));
+    }
+    this.lv = Math.max(this.lv * 0.88, Math.min(1, level));
 
-    let m = 0;
-    for (const v of b) m = Math.max(m, Math.abs(v - 128));
-    const level = m / 128; // -1 a 1
-
-    this.lv = Math.max(this.lv * 0.9, level); // caída suave
-
-    // Dibujar en el vúmetro del player
-    const segs = $('#player-' + this.id + '-vu .vu-segment');
-    if (!segs) return;
-
-    // 12 segmentos, cada uno cubre un rango
-    const segmentCount = segs.length;
-    for (let i = 0; i < segmentCount; i++) {
-      const threshold = (i + 1) / segmentCount; // de 1/12 a 12/12
-      const isLit = this.lv >= threshold;
-
-      const seg = segs[i];
-      seg.style.background = isLit
-        ? (i >= segmentCount - 2 ? '#ff2a2a' : i >= segmentCount - 4 ? '#ec3' : '#2bd13a')
+    const n = this.vuSegments.length;
+    for (let i = 0; i < n; i++) {
+      const lit = this.lv >= (i + 1) / n;
+      const seg = this.vuSegments[i];
+      seg.style.background = lit
+        ? (i >= n - 2 ? 'var(--led-rojo)' : i >= n - 4 ? '#ec3' : 'var(--led-verde)')
         : 'var(--vu-off)';
     }
-
-    // LEDs verdes junto a faders de canal siguen el mismo nivel (handled en main.js)
   }
 
   _updateLEDs() {
-    if (!this.track || !this.audio || !this.elLedStrip) return;
-
+    if (!this.track || !this.audio || !this.leds.length) return;
     const d = this.audio.duration || 0;
-    const current = this.audio.currentTime || 0;
-    const remaining = Math.max(0, d - current);
-
-    // Encender LEDs en los últimos 36 segundos (un LED cada 3s)
-    // 36s / 3s = 12 LEDs máximo, pero solo encendemos los correspondientes
-    const ledsToLight = Math.min(12, Math.floor(remaining / 3));
-
-    Array.from(this.elLedStrip.children).forEach((led, i) => {
-      if (i < ledsToLight) {
-        led.style.background = 'var(--led-red)';
-      } else {
-        led.style.background = 'var(--led-off)';
-      }
+    const cur = this.audio.currentTime || 0;
+    const remaining = Math.max(0, d - cur);
+    const lit = Math.min(this.leds.length, Math.floor(remaining / 3));
+    this.leds.forEach((led, i) => {
+      led.style.background = i < lit ? 'var(--led-rojo)' : 'var(--led-off)';
     });
   }
 }
 
-// Exportar clase global y helper $
-if (typeof module === 'undefined') {
-  window.Deck = Deck;
-}
+window.Deck = Deck;
 
-// Helper $
-if (typeof $ === 'undefined') {
-  window.$ = (sel, r = document) => { const e = r.querySelector(sel); if (!e) console.error('Falta elemento en el HTML:', sel); return e; };
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { Deck };
 }

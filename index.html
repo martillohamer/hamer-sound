@@ -1,3 +1,286 @@
 <!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>dj. hammer</title><link rel="stylesheet" href="styles.css"></head>
-<body><div class="console" id="console"><!-- Reloj LED arriba a la izquierda --><div class="led-clock"><span class="led-digits" id="led-clock">00:00</span><div class="led-label">dj. hammer</div></div><!-- Botones pequeños arriba a la derecha: cfg, i, stby, exit --><div class="top-btns"><button id="btn-cfg" aria-label="Configuración">cfg</button><button id="btn-info" aria-label="Ayuda">i</button><button id="btn-stby" aria-label="Standby">stby</button><button id="btn-exit" aria-label="Salir">exit</button></div><!-- Two players simétricos --><div class="rows"><!-- PLAYER A a la izquierda --><section class="player player-a" id="player-a"><!-- Pantalla LCD ≈250×112 --><div class="lcd"><!-- Franja superior fina teal (barra de progreso) --><div class="lcd-bar"><i></i></div><!-- Texto de estado a la izquierda ("CLOSED", "PLAYING"...) --><div class="lcd-status" id="player-a-status">CLOSED</div><!-- "Elapsed" y "Remaining" con dígitos de 7 segmentos grandes (mm:ss.cc) --><div class="lcd-timer"><span class="seg7-el" id="player-a-elapsed">00:00.0</span>/<span class="seg7-re" id="player-a-remaining">-00:00.0</span></div><!-- Abajo 2 líneas de mensaje (título de la pista o error) --><div class="lcd-msg" id="player-a-msg"></div></div><!-- Botón INFO arriba a la derecha de la pantalla --><button class="lcd-info" aria-label="Información de pista">INFO</button><!-- Vúmetro vertical segmentado ≈18×110 a la derecha de la pantalla --><div class="vu-meter" id="player-a-vu"><div class="vu-segment" data-level="-15"></div><div class="vu-segment" data-level="-13"></div><div class="vu-segment" data-level="-10"></div><div class="vu-segment" data-level="-8"></div><div class="vu-segment" data-level="-5"></div><div class="vu-segment" data-level="-3"></div><div class="vu-segment" data-level="-3"></div><div class="vu-segment" data-level="-8"></div><div class="vu-segment" data-level="-10"></div><div class="vu-segment" data-level="-13"></div><div class="vu-segment" data-level="-15"></div><div class="vu-segment" data-level="-15"></div></div><!-- Bloque PITCH: etiqueta, mini pantalla "00.00", botones − y +, fader vertical largo (−24 arriba, +24 abajo) con marcas de escala, y a su derecha 3 mini botones apilados (▲ ◆ ▼) --><div class="pitch-block"><span class="pitch-label">PITCH</span><span class="pitch-value" id="player-a-pitch">0.0%</span><button data-pitch-minus>−</button><input type="range" class="pitch-fader" min="-24" max="24" step=".5" value="0" data-pitch-fader><button data-pitch-plus>+</button><button data-pitch-default◆>◆</button></div><!-- Fila inferior: etiqueta "PLAYER A", tira de 12 LEDs rojos pequeños, botones de pista |◀ 0 ▶|, botón CUE grande, botón Play/Pausa ▶❚❚ grande, botón expulsar ▲ (violeta), botón "=" y botones « » --><div class="player-footer"><span class="player-label">PLAYER A</span><div class="led-strip" id="player-a-leds"></div><div class="player-controls"><button data-track-prev>|◀ 0 ▶|</button><button data-cue>CUE</button><button data-play>▶❚❚</button><button data-expel▲ style="background:var(--expel-violet);color:#fff">▲</button><button data-track-eq>=</button><button data-track-rew>«</button><button data-track-ff">»</button></div></div></section><!-- PLAYER B a la derecha --><section class="player player-b" id="player-b"><div class="lcd"><div class="lcd-bar"><i></i></div><div class="lcd-status" id="player-b-status">CLOSED</div><div class="lcd-timer"><span class="seg7-el" id="player-b-elapsed">00:00.0</span>/<span class="seg7-re" id="player-b-remaining">-00:00.0</span></div><div class="lcd-msg" id="player-b-msg"></div><button class="lcd-info" aria-label="Información de pista">INFO</button></div><div class="vu-meter" id="player-b-vu"><div class="vu-segment" data-level="-15"></div><div class="vu-segment" data-level="-13"></div><div class="vu-segment" data-level="-10"></div><div class="vu-segment" data-level="-8"></div><div class="vu-segment" data-level="-5"></div><div class="vu-segment" data-level="-3"></div><div class="vu-segment" data-level="-3"></div><div class="vu-segment" data-level="-8"></div><div class="vu-segment" data-level="-10"></div><div class="vu-segment" data-level="-13"></div><div class="vu-segment" data-level="-15"></div><div class="vu-segment" data-level="-15"></div></div><div class="pitch-block"><span class="pitch-label">PITCH</span><span class="pitch-value" id="player-b-pitch">0.0%</span><button data-pitch-minus>−</button><input type="range" class="pitch-fader" min="-24" max="24" step=".5" value="0" data-pitch-fader><button data-pitch-plus>+</button><button data-pitch-default◆>◆</button></div><div class="player-footer"><span class="player-label">PLAYER B</span><div class="led-strip" id="player-b-leds"></div><div class="player-controls"><button data-track-prev>|◀ 0 ▶|</button><button data-cue>CUE</button><button data-play>▶❚❚</button><button data-expel▲ style="background:var(--expel-violet);color:#fff">▲</button><button data-track-eq>=</button><button data-track-rew>«</button><button data-track-ff">»</button></div></section></div><!-- Mixer (232–400): fondo rojo hundido con 4 tornillos en las esquinas --><div class="mixer"><div class="mixer-h"><span></span><span></span><span></span><span></span></div><div class="chan"><b>A</b><input type="range" class="vf" id="vol-a" min="0" max="1" step=".01" value=".8"><small>vol</small></div><div class="chan"><b>B</b><input type="range" class="vf" id="vol-b" min="0" max="1" step=".01" value=".8"><small>vol</small></div><div class="mid"><canvas id="vu-meter" width="90" height="110"></canvas><input type="range" id="crossfader" min="-1" max="1" step=".01" value="0"><small>crossfade <span id="cf-value">50%</span></small><small>master <input type="range" id="master" min="0" max="1" step=".01" value=".8"></small></div><div class="chan"><b>B</b><input type="range" class="vf" id="vol-b2" min="0" max="1" step=".01" value=".8"><small>vol</small></div></div><!-- Biblioteca (405 hasta abajo): pestaña "Default" y botón "edit recordcase" arriba a la izquierda --><section class="library"><div class="lib-header"><span>Default</span><button id="btn-edit-recordcase" aria-label="Editar ficha">edit recordcase</button></div><div class="lib-table"><table><thead><tr><th><span class="sort-indicator">✓</span></th><th>bpm</th><th>artist</th><th>trackname</th><th>version</th><th>comment</th></tr></thead><tbody id="library-rows"></tbody></table></div><div class="lib-empty" id="lib-empty">Arrastra aquí tus MP3 o pulsa «+ Añadir MP3»</div></section><div class="lib-controls"><input type="text" id="lib-filter" placeholder="Filtrar artista/título"><button id="btn-auto">AUTO</button><label><input type="checkbox" id="chk-shuffle">SHFL</label><label><input type="checkbox" id="chk-hide-hidden">Ocultar ✓</label><button id="btn-reset">Reiniciar ✓</button></div></section></div><div class="status">Pistas: <span id="track-count">0</span> · Doble clic = cargar · Arrastra una fila a un player</div></body><script src="js/audio.js" defer></script><script src="js/seg7.js" defer></script><script src="js/controls.js" defer></script><script src="js/deck.js" defer></script><script src="js/library.js" defer></script><script src="js/main.js" defer></script></body></html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dj. hammer</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ZONA A: CABECERA -->
+    <header class="top-bar">
+      <div class="brand">
+        <div class="clock" aria-label="Reloj">
+          <span class="clock-digits">00:00</span>
+          <span class="clock-led" aria-hidden="true"></span>
+        </div>
+        <h1 class="brand-title">dj. hammer</h1>
+        <span class="brand-sub">PCDJ · SILVER EDITION</span>
+      </div>
+      <nav class="top-controls" aria-label="Controles generales">
+        <button type="button" class="top-btn" id="btn-cfg">cfg</button>
+        <button type="button" class="top-btn" id="btn-info">i</button>
+        <button type="button" class="top-btn" id="btn-stby">stby</button>
+        <button type="button" class="top-btn" id="btn-exit">exit</button>
+      </nav>
+    </header>
+
+    <main class="rack">
+
+      <!-- ZONA B: PLAYER A Y PLAYER B -->
+      <div class="players-row">
+
+        <!-- PLAYER A -->
+        <section class="player" id="player-a" aria-label="Player A">
+          <div class="player-title">
+            <span class="player-name">PLAYER A</span>
+            <span class="player-state" id="player-a-status">CLOSED</span>
+          </div>
+
+          <div class="lcd">
+            <div class="lcd-head">
+              <span class="lcd-heading">Elapsed / Remaining</span>
+              <button type="button" class="lcd-info" aria-label="Información de pista">INFO</button>
+            </div>
+            <div class="lcd-timer">
+              <div class="lcd-values">
+                <i class="lcd-progress" aria-hidden="true"></i>
+                <span class="seg7-el" id="player-a-elapsed">00:00.0</span>
+                <span class="lcd-slash">/</span>
+                <span class="seg7-re" id="player-a-remaining">-00:00.0</span>
+              </div>
+            </div>
+            <div class="lcd-msg" id="player-a-msg">NOT LOADED! Invalid floating point operation</div>
+          </div>
+
+          <div class="player-vu" id="player-a-vu" aria-label="Vúmetro A">
+            <span class="vu-segment" data-level="-15"></span>
+            <span class="vu-segment" data-level="-13"></span>
+            <span class="vu-segment" data-level="-10"></span>
+            <span class="vu-segment" data-level="-8"></span>
+            <span class="vu-segment" data-level="-5"></span>
+            <span class="vu-segment" data-level="-3"></span>
+            <span class="vu-segment" data-level="-3"></span>
+            <span class="vu-segment" data-level="-8"></span>
+            <span class="vu-segment" data-level="-10"></span>
+            <span class="vu-segment" data-level="-13"></span>
+            <span class="vu-segment" data-level="-15"></span>
+            <span class="vu-segment" data-level="-15"></span>
+          </div>
+
+          <div class="pitch-block">
+            <span class="pitch-label">PITCH</span>
+            <span class="pitch-value" id="player-a-pitch">0.0%</span>
+            <input type="range" class="pitch-fader" id="player-a-pitch-fader" min="-24" max="24" step=".5" value="0" data-pitch-fader aria-label="Pitch A">
+            <div class="pitch-buttons">
+              <button type="button" data-pitch-minus aria-label="Bajar pitch">−</button>
+              <button type="button" data-pitch-plus aria-label="Subir pitch">+</button>
+              <button type="button" data-pitch-default aria-label="Pitch por defecto">◆</button>
+            </div>
+          </div>
+
+          <div class="player-controls">
+            <div class="transport">
+              <button type="button" id="player-a-prev" data-track-prev aria-label="Pista anterior">|◀ 0 ▶|</button>
+              <button type="button" id="player-a-cue" data-cue class="btn-cue">CUE</button>
+              <button type="button" id="player-a-play" data-play class="btn-play">▶❚❚</button>
+              <button type="button" id="player-a-expel" data-expel class="btn-eject" aria-label="Expulsar pista">▲</button>
+              <button type="button" data-track-eq aria-label="Ecualizador">=</button>
+              <button type="button" id="player-a-rew" data-track-rew aria-label="Retroceder">«</button>
+              <button type="button" id="player-a-ff" data-track-ff aria-label="Avanzar">»</button>
+            </div>
+            <div class="led-strip" id="player-a-leds" aria-label="LEDs de pista">
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- PLAYER B -->
+        <section class="player" id="player-b" aria-label="Player B">
+          <div class="player-title">
+            <span class="player-name">PLAYER B</span>
+            <span class="player-state" id="player-b-status">CLOSED</span>
+          </div>
+
+          <div class="lcd">
+            <div class="lcd-head">
+              <span class="lcd-heading">Elapsed / Remaining</span>
+              <button type="button" class="lcd-info" aria-label="Información de pista">INFO</button>
+            </div>
+            <div class="lcd-timer">
+              <div class="lcd-values">
+                <i class="lcd-progress" aria-hidden="true"></i>
+                <span class="seg7-el" id="player-b-elapsed">00:00.0</span>
+                <span class="lcd-slash">/</span>
+                <span class="seg7-re" id="player-b-remaining">-00:00.0</span>
+              </div>
+            </div>
+            <div class="lcd-msg" id="player-b-msg">NOT LOADED! Invalid floating point operation</div>
+          </div>
+
+          <div class="player-vu" id="player-b-vu" aria-label="Vúmetro B">
+            <span class="vu-segment" data-level="-15"></span>
+            <span class="vu-segment" data-level="-13"></span>
+            <span class="vu-segment" data-level="-10"></span>
+            <span class="vu-segment" data-level="-8"></span>
+            <span class="vu-segment" data-level="-5"></span>
+            <span class="vu-segment" data-level="-3"></span>
+            <span class="vu-segment" data-level="-3"></span>
+            <span class="vu-segment" data-level="-8"></span>
+            <span class="vu-segment" data-level="-10"></span>
+            <span class="vu-segment" data-level="-13"></span>
+            <span class="vu-segment" data-level="-15"></span>
+            <span class="vu-segment" data-level="-15"></span>
+          </div>
+
+          <div class="pitch-block">
+            <span class="pitch-label">PITCH</span>
+            <span class="pitch-value" id="player-b-pitch">0.0%</span>
+            <input type="range" class="pitch-fader" id="player-b-pitch-fader" min="-24" max="24" step=".5" value="0" data-pitch-fader aria-label="Pitch B">
+            <div class="pitch-buttons">
+              <button type="button" data-pitch-minus aria-label="Bajar pitch">−</button>
+              <button type="button" data-pitch-plus aria-label="Subir pitch">+</button>
+              <button type="button" data-pitch-default aria-label="Pitch por defecto">◆</button>
+            </div>
+          </div>
+
+          <div class="player-controls">
+            <div class="transport">
+              <button type="button" id="player-b-prev" data-track-prev aria-label="Pista anterior">|◀ 0 ▶|</button>
+              <button type="button" id="player-b-cue" data-cue class="btn-cue">CUE</button>
+              <button type="button" id="player-b-play" data-play class="btn-play">▶❚❚</button>
+              <button type="button" id="player-b-expel" data-expel class="btn-eject" aria-label="Expulsar pista">▲</button>
+              <button type="button" data-track-eq aria-label="Ecualizador">=</button>
+              <button type="button" id="player-b-rew" data-track-rew aria-label="Retroceder">«</button>
+              <button type="button" id="player-b-ff" data-track-ff aria-label="Avanzar">»</button>
+            </div>
+            <div class="led-strip" id="player-b-leds" aria-label="LEDs de pista">
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+              <span class="led"></span><span class="led"></span><span class="led"></span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ZONA C: MEZCLADOR CENTRAL -->
+      <section class="mixer" aria-label="Mezclador central">
+        <div class="section-label"><span>MIXER</span><i aria-hidden="true"></i></div>
+
+        <div class="mixer-grid">
+          <div class="mix-channel">
+            <span class="chan-badge">A</span>
+            <input type="range" class="channel-fader" id="vol-a" min="0" max="1" step=".01" value=".8" aria-label="Volumen A">
+            <span class="chan-caption">vol A</span>
+          </div>
+
+          <div class="mix-vu">
+            <canvas id="vu-meter" width="90" height="110" aria-label="Vúmetro máster"></canvas>
+            <span class="chan-caption">master VU</span>
+          </div>
+
+          <div class="mix-channel">
+            <span class="chan-badge">B</span>
+            <input type="range" class="channel-fader" id="vol-b" min="0" max="1" step=".01" value=".8" aria-label="Volumen B">
+            <span class="chan-caption">vol B</span>
+          </div>
+        </div>
+
+        <div class="crossfade-row">
+          <span class="xfade-end">A</span>
+          <input type="range" id="crossfader" min="-1" max="1" step=".01" value="0" aria-label="Crossfader">
+          <span class="xfade-end">B</span>
+          <output id="cf-value" for="crossfader">50%</output>
+        </div>
+
+        <div class="mixer-foot">
+          <label class="mini-control">master
+            <input type="range" id="master" min="0" max="1" step=".01" value=".8" aria-label="Master">
+          </label>
+          <label class="mini-control">B trim
+            <input type="range" id="vol-b2" min="0" max="1" step=".01" value="1" aria-label="Ajuste B">
+          </label>
+        </div>
+      </section>
+
+      <!-- ZONA D: BIBLIOTECA -->
+      <section class="library" aria-label="Biblioteca de pistas">
+        <div class="lib-header">
+          <span class="lib-name">Default</span>
+          <button type="button" class="lib-btn">edit recordcase</button>
+          <span class="lib-hint">Doble clic = cargar · Arrastra una fila a un player</span>
+        </div>
+
+        <div class="lib-table">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-check"><span class="sort-indicator">✓</span></th>
+                <th class="col-bpm">bpm</th>
+                <th class="col-artist">artist</th>
+                <th class="col-track">trackname</th>
+                <th class="col-version">version</th>
+                <th class="col-comment">comment</th>
+              </tr>
+            </thead>
+            <tbody id="library-rows"></tbody>
+          </table>
+          <div class="lib-empty" id="lib-empty">Arrastra aquí tus MP3 o pulsa «+ Añadir MP3»</div>
+        </div>
+
+        <div class="lib-controls">
+          <button type="button" id="btn-add" class="btn-add">+ Añadir MP3</button>
+          <input type="file" id="file-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.opus" multiple hidden>
+          <input type="text" id="lib-filter" placeholder="Filtrar artista/título" aria-label="Filtrar pistas">
+          <button type="button" id="btn-load-a" title="Cargar selección en Player A">→ A</button>
+          <button type="button" id="btn-load-b" title="Cargar selección en Player B">→ B</button>
+          <button type="button" id="btn-auto">AUTO</button>
+          <label class="check"><input type="checkbox" id="chk-shuffle">SHFL</label>
+          <label class="check"><input type="checkbox" id="chk-hide-hidden">Ocultar ✓</label>
+          <button type="button" id="btn-reset">Reiniciar ✓</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- ZONA E: ESTADO INFERIOR -->
+    <footer class="status-bar">
+      <span>Pistas: <span id="track-count">0</span> · Doble clic = cargar · Arrastra una fila a un player</span>
+      <span id="mini-viewer"></span>
+      <span id="status-msg"></span>
+    </footer>
+  </div>
+
+  <dialog id="dlg-cfg" class="metal-dialog">
+    <h2>Configuración</h2>
+    <label class="dialog-row">Crossfade AUTO (s)
+      <input type="range" id="cfg-crossfade" min="2" max="20" step="1" value="8">
+      <output id="cfg-crossfade-value">8</output>
+    </label>
+    <label class="dialog-row">Master
+      <input type="range" id="cfg-master" min="0" max="1" step=".01" value=".8">
+    </label>
+    <button type="button" data-close-dialog>Cerrar</button>
+  </dialog>
+
+  <dialog id="dlg-info" class="metal-dialog">
+    <h2>dj. hammer · Silver Edition</h2>
+    <p>Mezclador de dos decks con crossfader de potencia constante, modo AUTO y biblioteca local.</p>
+    <p>Atajos: arrastra MP3 a la app, Ctrl+V para pegar archivos, doble clic en una fila para cargarla.</p>
+    <button type="button" data-close-dialog>Cerrar</button>
+  </dialog>
+
+  <script src="js/seg7.js" defer></script>
+  <script src="js/controls.js" defer></script>
+  <script src="js/audio.js" defer></script>
+  <script src="js/deck.js" defer></script>
+  <script src="js/library.js" defer></script>
+  <script src="js/main.js" defer></script>
+</body>
+</html>
