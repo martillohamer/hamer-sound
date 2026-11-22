@@ -1,4 +1,4 @@
-// library.js — Biblioteca: archivos reales, filtro, marcas persistentes, arrastre y carga
+// library.js — Biblioteca: archivos reales, recordcases, filtro, marcas persistentes, arrastre y carga
 'use strict';
 
 if (typeof $ === 'undefined') {
@@ -11,19 +11,25 @@ if (typeof $ === 'undefined') {
 
 const Library = {
   tracks: [],
+  folders: [],
+  activeFolder: 'all',
   sel: null,
   autoMode: false,
   shuffle: false,
   hidePlayed: false,
   filterText: '',
   playedKey: 'hammer:played:v1',
+  libKey: 'hammer:library:v1',
   _inited: false,
+  _assignTarget: '',
 
   // ---------- Init ----------
   init() {
     if (this._inited) return;
     this._inited = true;
+    this._restore();
     this._bindUI();
+    this._bindRecordcase();
     this.render();
   },
 
@@ -62,7 +68,53 @@ const Library = {
     if (loadA) loadA.addEventListener('click', () => self.loadSelected('A'));
     if (loadB) loadB.addEventListener('click', () => self.loadSelected('B'));
 
-    // Tabla: clic = seleccionar, check = marcar, doble clic = cargar, arrastre = cargar
+    const assignSel = $('#folder-assign');
+    const assignBtn = $('#btn-folder-assign');
+    if (assignSel) assignSel.addEventListener('change', () => { self._assignTarget = assignSel.value; });
+    if (assignBtn) assignBtn.addEventListener('click', () => {
+      if (!self._assignTarget) {
+        window.setStatus && window.setStatus('Elige primero una carpeta de destino');
+        return;
+      }
+      if (!self.sel) {
+        window.setStatus && window.setStatus('Selecciona una pista primero');
+        return;
+      }
+      self.assignToFolder(self.sel, self._assignTarget);
+    });
+
+    // Chips de recordcase: clic = filtrar, arrastrar una fila encima = asignar.
+    const chips = $('#folder-chips');
+    if (chips) {
+      chips.addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-folder]');
+        if (chip) self.setActiveFolder(chip.dataset.folder);
+      });
+      chips.addEventListener('dragover', (e) => {
+        const chip = e.target.closest('[data-folder]');
+        if (!chip || chip.dataset.folder === 'all') return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        chip.classList.add('drop-hover');
+      });
+      chips.addEventListener('dragleave', (e) => {
+        const chip = e.target.closest('[data-folder]');
+        if (chip && (!e.relatedTarget || !chip.contains(e.relatedTarget))) chip.classList.remove('drop-hover');
+      });
+      chips.addEventListener('drop', (e) => {
+        const chip = e.target.closest('[data-folder]');
+        if (!chip || chip.dataset.folder === 'all') return;
+        e.preventDefault();
+        e.stopPropagation();
+        chip.classList.remove('drop-hover');
+        const id = e.dataTransfer && e.dataTransfer.getData('text/plain');
+        const track = self.tracks.find(t => String(t.id) === String(id));
+        if (track) self.assignToFolder(track, chip.dataset.folder);
+      });
+    }
+
+    // Tabla: clic = seleccionar, check = marcar, doble clic = cargar y reproducir, arrastre = cargar
     const tbody = $('#library-rows');
     if (tbody) {
       tbody.addEventListener('change', (e) => {
@@ -79,7 +131,7 @@ const Library = {
           e.preventDefault();
           e.stopPropagation();
           const track = self._trackFromRow(quick.closest('tr'));
-          if (track) self.loadTo(track, quick.dataset.quickDeck);
+          if (track) self.loadTo(track, quick.dataset.quickDeck, true);
           self.hideContextMenu();
           return;
         }
@@ -97,7 +149,7 @@ const Library = {
         const track = self._trackFromRow(row);
         if (!track) return;
         self.select(track);
-        self.loadTo(track, self._preferredDeck());
+        self.loadTo(track, self._preferredDeck(), true);
       });
       tbody.addEventListener('contextmenu', (e) => {
         const row = e.target.closest('tr');
@@ -184,6 +236,7 @@ const Library = {
     document.addEventListener('dragend', () => {
       if (app) app.classList.remove('drag-over');
       if (lib) lib.classList.remove('drag-over');
+      document.querySelectorAll('.chip.drop-hover').forEach(c => c.classList.remove('drop-hover'));
     });
 
     // Ctrl+V
@@ -198,7 +251,9 @@ const Library = {
     this._bindContextMenu();
   },
 
-  // ---------- Persistencia de marcas ----------
+  // ---------- Persistencia ----------
+  // Guardamos SOLO metadatos. Las URL blob: caducan al recargar, por eso jamás
+  // se escriben en localStorage: al volver a añadir el archivo se regeneran.
   _key(t) {
     return [t.name, t.size, t.lastModified].join('|');
   },
@@ -211,10 +266,73 @@ const Library = {
     } catch (_) { return {}; }
   },
 
+  _writeStore() {
+    try {
+      const data = {
+        folders: this.folders.map(f => ({ id: String(f.id), name: f.name })),
+        activeFolder: String(this.activeFolder),
+        tracks: this.tracks.map(t => ({
+          id: t.id,
+          key: this._key(t),
+          name: t.name, title: t.title, artist: t.artist,
+          size: t.size, lastModified: t.lastModified,
+          version: t.version, comment: t.comment, bpm: t.bpm,
+          folder: t.folder, played: !!t.played
+        }))
+      };
+      localStorage.setItem(this.libKey, JSON.stringify(data));
+    } catch (_) { /* ignore: cuota o almacenamiento desactivado */ }
+  },
+
   _writeMap() {
     const map = {};
     this.tracks.forEach(t => { map[this._key(t)] = !!t.played; });
     try { localStorage.setItem(this.playedKey, JSON.stringify(map)); } catch (_) { /* ignore */ }
+    this._writeStore();
+  },
+
+  _restore() {
+    let data = null;
+    try {
+      const raw = localStorage.getItem(this.libKey);
+      if (raw) data = JSON.parse(raw);
+    } catch (_) { data = null; }
+    if (!data || typeof data !== 'object') data = {};
+
+    const folders = Array.isArray(data.folders)
+      ? data.folders.filter(f => f && f.id && f.name).map(f => ({ id: String(f.id), name: String(f.name) }))
+      : [];
+    this.folders = folders.length ? folders : [{ id: 'default', name: 'Default' }];
+    if (!this.folders.some(f => f.id === 'default')) this.folders.unshift({ id: 'default', name: 'Default' });
+    const ids = new Set(this.folders.map(f => f.id));
+
+    const played = this._readMap();
+    const seen = new Set();
+    this.tracks = (Array.isArray(data.tracks) ? data.tracks : []).map(t => {
+      if (!t) return null;
+      const key = t.key || [t.name, t.size, t.lastModified].join('|');
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return {
+        id: t.id != null ? t.id : Date.now() + Math.random(),
+        name: t.name || 'pista',
+        title: t.title || t.name || 'pista',
+        artist: t.artist || '',
+        url: null,                       // se regenera al re-añadir el MP3
+        missing: true,                   // sin archivo enlazado en esta sesión
+        dur: null,
+        size: t.size || 0,
+        lastModified: t.lastModified || 0,
+        version: t.version || '',
+        comment: t.comment || '',
+        bpm: t.bpm || '---',
+        folder: ids.has(String(t.folder)) ? String(t.folder) : 'default',
+        played: typeof t.played === 'boolean' ? t.played : !!played[key]
+      };
+    }).filter(Boolean);
+
+    const restoredActive = String(data.activeFolder);
+    this.activeFolder = (restoredActive === 'all' || ids.has(restoredActive)) ? restoredActive : 'all';
   },
 
   // ---------- Archivos ----------
@@ -231,25 +349,46 @@ const Library = {
     );
     const map = this._readMap();
     const added = [];
+    let relinked = 0;
 
     list.forEach(f => {
       const name = this._cleanName(f);
+      const key = [name, f.size, f.lastModified].join('|');
+      const existing = this.tracks.find(t => this._key(t) === key);
+
+      if (existing) {
+        // Re-vinculación: el archivo físico vuelve a estar disponible.
+        // No revocamos la URL si algún deck la está usando todavía.
+        const inUse = ['A', 'B'].some(k => {
+          const d = window.decks && window.decks[k];
+          return d && d.audio && d.audio.src === existing.url;
+        });
+        if (!inUse && existing.url && String(existing.url).indexOf('blob:') === 0) {
+          try { URL.revokeObjectURL(existing.url); } catch (_) { /* ignore */ }
+        }
+        existing.url = URL.createObjectURL(f);
+        if (existing.missing) relinked++;
+        existing.missing = false;
+        existing.name = name;
+        added.push(existing);
+        return;
+      }
+
       const sep = name.lastIndexOf(' - ');
       const title = sep > 0 ? name.slice(0, sep).trim() : name.trim();
       const artist = sep > 0 ? name.slice(sep + 3).trim() : '';
-      const key = [name, f.size, f.lastModified].join('|');
-
-      if (this.tracks.some(t => this._key(t) === key)) return;
       const track = {
         id: Date.now() + Math.random(),
         name, title, artist,
         url: URL.createObjectURL(f),
+        missing: false,
         dur: null,
         size: f.size,
         lastModified: f.lastModified,
         version: '',
         comment: '',
         bpm: '---',
+        folder: this.activeFolder !== 'all' ? this.activeFolder : 'default',
         played: !!map[key]
       };
       this.tracks.push(track);
@@ -260,7 +399,8 @@ const Library = {
       if (!this.sel) this.sel = added[0]; // para que → A / → B funcionen nada más añadir
       this._writeMap();
       this.render();
-      window.setStatus && window.setStatus('Añadidas ' + added.length + ' pista(s)');
+      window.setStatus && window.setStatus('Añadidas ' + added.length + ' pista(s)' +
+        (relinked ? ' · ' + relinked + ' re-enlazada(s)' : ''));
     } else if (list.length) {
       window.setStatus && window.setStatus('Ese archivo ya está en la biblioteca');
     }
@@ -281,6 +421,137 @@ const Library = {
     return this.tracksForFiles(files);
   },
 
+  // ---------- Recordcases ----------
+  _pool() {
+    if (this.activeFolder === 'all') return this.tracks;
+    return this.tracks.filter(t => String(t.folder) === String(this.activeFolder));
+  },
+
+  folderName(id) {
+    const f = this.folders.find(x => String(x.id) === String(id));
+    return f ? f.name : '—';
+  },
+
+  setActiveFolder(id) {
+    this.activeFolder = (id === 'all') ? 'all' : String(id);
+    this._writeMap();
+    this.render();
+    window.setStatus && window.setStatus('Recordcase: ' + (id === 'all' ? 'Todas' : this.folderName(id)));
+  },
+
+  assignToFolder(track, folderId) {
+    if (!track) return false;
+    const id = String(folderId);
+    if (!this.folders.some(f => f.id === id)) return false;
+    track.folder = id;
+    this._writeMap();
+    this.render();
+    window.setStatus && window.setStatus('«' + track.title + '» → ' + this.folderName(id));
+    return true;
+  },
+
+  createFolder(name) {
+    name = String(name || '').trim();
+    if (!name) return null;
+    if (this.folders.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+      window.setStatus && window.setStatus('Ya existe una carpeta con ese nombre');
+      return null;
+    }
+    const f = { id: 'f' + Date.now() + Math.floor(Math.random() * 1000), name: name };
+    this.folders.push(f);
+    this._writeMap();
+    this.render();
+    this._renderRecordcaseList();
+    return f;
+  },
+
+  renameFolder(id, name) {
+    name = String(name || '').trim();
+    const f = this.folders.find(x => String(x.id) === String(id));
+    if (!f || !name) return false;
+    if (id !== 'default' && this.folders.some(x => x.id !== f.id && x.name.toLowerCase() === name.toLowerCase())) {
+      window.setStatus && window.setStatus('Ya existe una carpeta con ese nombre');
+      this._renderRecordcaseList();
+      return false;
+    }
+    f.name = name;
+    this._writeMap();
+    this.render();
+    this._renderRecordcaseList();
+    return true;
+  },
+
+  deleteFolder(id) {
+    if (String(id) === 'default') {
+      window.setStatus && window.setStatus('La carpeta Default no se puede borrar');
+      return false;
+    }
+    const f = this.folders.find(x => String(x.id) === String(id));
+    if (!f) return false;
+    this.folders = this.folders.filter(x => x.id !== f.id);
+    this.tracks.forEach(t => { if (String(t.folder) === String(id)) t.folder = 'default'; });
+    if (this.activeFolder === String(id)) this.activeFolder = 'all';
+    this._writeMap();
+    this.render();
+    this._renderRecordcaseList();
+    window.setStatus && window.setStatus('Carpeta «' + f.name + '» borrada · sus pistas pasan a Default');
+    return true;
+  },
+
+  _bindRecordcase() {
+    const self = this;
+    const dlg = $('#dlg-recordcase');
+    const open = () => {
+      self._renderRecordcaseList();
+      if (dlg && !dlg.open && typeof dlg.showModal === 'function') dlg.showModal();
+    };
+    const newBtn = $('#btn-folder-new');
+    const editBtn = $('#btn-folder-edit');
+    if (newBtn) newBtn.addEventListener('click', open);
+    if (editBtn) editBtn.addEventListener('click', open);
+
+    const input = $('#rc-new-name');
+    const doAdd = () => {
+      const f = self.createFolder(input ? input.value : '');
+      if (f) {
+        if (input) input.value = '';
+        self.setActiveFolder(f.id);
+      }
+    };
+    const addBtn = $('#rc-add');
+    if (addBtn) addBtn.addEventListener('click', doAdd);
+    if (input) input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doAdd(); }
+    });
+
+    const list = $('#rc-list');
+    if (list) {
+      list.addEventListener('change', (e) => {
+        const inp = e.target.closest('[data-rc-id]');
+        if (inp) self.renameFolder(inp.dataset.rcId, inp.value);
+      });
+      list.addEventListener('click', (e) => {
+        const del = e.target.closest('[data-rc-del]');
+        if (del) self.deleteFolder(del.dataset.rcDel);
+      });
+    }
+  },
+
+  _renderRecordcaseList() {
+    const list = $('#rc-list');
+    if (!list) return;
+    list.innerHTML = this.folders.map(f => {
+      const n = this.tracks.filter(t => String(t.folder) === String(f.id)).length;
+      const label = String(f.id) === 'default' ? ' (fija)' : '';
+      return '<div class="rc-row">' +
+        '<input type="text" data-rc-id="' + this._esc(f.id) + '" value="' + this._esc(f.name) + '" maxlength="40" aria-label="Nombre de carpeta">' +
+        '<span class="rc-count">' + n + ' pista(s)' + label + '</span>' +
+        (String(f.id) === 'default' ? '<span></span>'
+          : '<button type="button" class="danger" data-rc-del="' + this._esc(f.id) + '" title="Borrar carpeta">✕</button>') +
+        '</div>';
+    }).join('');
+  },
+
   // ---------- Render ----------
   _esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -297,35 +568,71 @@ const Library = {
 
     let html = '';
     let visible = 0;
-    this.tracks.forEach(t => {
+    this._pool().forEach(t => {
       const matches = !q ||
         String(t.title || '').toLowerCase().includes(q) ||
         String(t.artist || '').toLowerCase().includes(q) ||
-        String(t.name || '').toLowerCase().includes(q);
+        String(t.name || '').toLowerCase().includes(q) ||
+        this.folderName(t.folder).toLowerCase().includes(q);
       if (!matches) return;
       if (this.hidePlayed && t.played) return;
       visible++;
-      const cls = [t === this.sel ? 'sel' : '', t.played ? 'played' : ''].filter(Boolean).join(' ');
+      const cls = [t === this.sel ? 'sel' : '', t.played ? 'played' : '',
+        t.missing ? 'missing' : ''].filter(Boolean).join(' ');
+      const tip = t.missing ? ' · vuelve a añadir el archivo' : '';
       html += '<tr draggable="true" data-id="' + this._esc(t.id) + '" class="' + cls + '">' +
         '<td><input type="checkbox" class="chk-played" ' + (t.played ? 'checked' : '') + ' aria-label="Marcar reproducida"></td>' +
         '<td>' + this._esc(t.bpm || '---') + '</td>' +
-        '<td title="' + this._esc(t.artist) + '">' + this._esc(t.artist) + '</td>' +
-        '<td title="' + this._esc(t.title) + '">' + this._esc(t.title) + '</td>' +
+        '<td title="' + this._esc(t.artist + tip) + '">' + this._esc(t.artist) + '</td>' +
+        '<td title="' + this._esc(t.title + tip) + '">' + this._esc(t.title) + '</td>' +
         '<td>' + this._esc(t.version) + '</td>' +
         '<td class="comment-cell"><div class="comment-inner">' +
-          '<span class="comment-text" title="' + this._esc(t.comment) + '">' + this._esc(t.comment) + '</span>' +
+          '<span class="comment-text" title="' + this._esc(t.comment + tip) + '">' + this._esc(t.comment) + '</span>' +
           '<span class="row-quick">' +
-            '<button type="button" class="quick-btn quick-a" data-quick-deck="A" title="Cargar en Player A">Play A</button>' +
-            '<button type="button" class="quick-btn quick-b" data-quick-deck="B" title="Cargar en Player B">Play B</button>' +
+            '<button type="button" class="quick-btn quick-a" data-quick-deck="A" title="Cargar y reproducir en Player A">Play A</button>' +
+            '<button type="button" class="quick-btn quick-b" data-quick-deck="B" title="Cargar y reproducir en Player B">Play B</button>' +
           '</span>' +
         '</div></td>' +
         '</tr>';
     });
 
     tbody.innerHTML = html;
-    if (empty) empty.style.display = visible ? 'none' : 'grid';
+    if (empty) {
+      empty.textContent = this.tracks.length
+        ? 'Sin pistas en esta vista · cambia de carpeta o quita el filtro'
+        : 'Arrastra aquí tus MP3 o pulsa «+ Añadir MP3»';
+      empty.style.display = visible ? 'none' : 'grid';
+    }
     const count = $('#track-count');
     if (count) count.textContent = String(this.tracks.length);
+    this._renderChips();
+  },
+
+  _renderChips() {
+    const bar = $('#folder-chips');
+    if (bar) {
+      const active = String(this.activeFolder);
+      let html = '<button type="button" class="chip' + (active === 'all' ? ' active' : '') +
+        '" data-folder="all">Todas<span class="chip-count">' + this.tracks.length + '</span></button>';
+      this.folders.forEach(f => {
+        const id = String(f.id);
+        const n = this.tracks.filter(t => String(t.folder) === id).length;
+        html += '<button type="button" class="chip' + (active === id ? ' active' : '') +
+          '" data-folder="' + this._esc(id) + '">' + this._esc(f.name) +
+          '<span class="chip-count">' + n + '</span></button>';
+      });
+      bar.innerHTML = html;
+    }
+    const name = $('#lib-folder-name');
+    if (name) name.textContent = this.activeFolder === 'all' ? 'Todas' : this.folderName(this.activeFolder);
+    const sel = $('#folder-assign');
+    if (sel) {
+      const prev = this._assignTarget || '';
+      sel.innerHTML = '<option value="">Mover a carpeta…</option>' + this.folders.map(f =>
+        '<option value="' + this._esc(f.id) + '">' + this._esc(f.name) + '</option>').join('');
+      sel.value = prev;
+      if (sel.value !== prev) { sel.value = ''; this._assignTarget = ''; }
+    }
   },
 
   // ---------- Menú contextual de asignación rápida ----------
@@ -336,6 +643,16 @@ const Library = {
     this._ctxMenu = menu;
 
     menu.addEventListener('click', (e) => {
+      const folderItem = e.target.closest('[data-ctx-folder]');
+      if (folderItem && menu.contains(folderItem)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const track = self._ctxTrack;
+        const id = folderItem.getAttribute('data-ctx-folder');
+        self.hideContextMenu();
+        if (track) self.assignToFolder(track, id);
+        return;
+      }
       const item = e.target.closest('[data-ctx-deck]');
       if (!item || !menu.contains(item)) return;
       e.preventDefault();
@@ -366,6 +683,7 @@ const Library = {
   showContextMenu(clientX, clientY) {
     const menu = this._ctxMenu;
     if (!menu) return;
+    this._renderCtxFolders();
     menu.classList.add('open');
     menu.setAttribute('aria-hidden', 'false');
 
@@ -386,6 +704,15 @@ const Library = {
     if (top < pad) top = pad;
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
+  },
+
+  _renderCtxFolders() {
+    const box = $('#ctx-folders');
+    if (!box) return;
+    if (!this._ctxTrack) { box.innerHTML = '<div class="ctx-empty">—</div>'; return; }
+    box.innerHTML = this.folders.map(f =>
+      '<button type="button" role="menuitem" data-ctx-folder="' + this._esc(f.id) + '">' +
+      this._esc(f.name) + '</button>').join('');
   },
 
   hideContextMenu() {
@@ -417,13 +744,19 @@ const Library = {
   },
 
   loadTo(track, deckId, autoplay = false) {
-    if (!track) return;
+    if (!track) return false;
+    if (!track.url) {
+      this.select(track);
+      window.setStatus && window.setStatus('«' + track.title + '»: vuelve a añadir el archivo para enlazarlo');
+      return false;
+    }
     const key = String(deckId || 'A').toUpperCase();
     const deck = window.decks && window.decks[key];
-    if (!deck) return;
+    if (!deck) return false;
     this.select(track);
     deck.load(track, !!autoplay);
     window.setStatus && window.setStatus(track.title + ' → Player ' + key + (autoplay ? ' · PLAY' : ''));
+    return true;
   },
 
   loadSelected(deckId) {
@@ -437,26 +770,28 @@ const Library = {
   loadAdjacent(deckId, dir) {
     const deck = window.decks && window.decks[String(deckId).toUpperCase()];
     if (!deck || !this.tracks.length) return;
+    const pool = this._pool();
     const current = deck.track || this.sel;
-    let idx = current ? this.tracks.findIndex(t => t.id === current.id) : -1;
+    let idx = current ? pool.findIndex(t => t.id === current.id) : -1;
     if (idx < 0) idx = 0;
     let next = idx + dir;
-    if (next < 0) next = this.tracks.length - 1;
-    if (next >= this.tracks.length) next = 0;
-    this.loadTo(this.tracks[next], deckId);
+    if (next < 0) next = pool.length - 1;
+    if (next >= pool.length) next = 0;
+    if (pool[next]) this.loadTo(pool[next], deckId);
   },
 
   nextUnplayed(excludeId) {
-    const pool = this.tracks.filter(t => !t.played && t.id !== excludeId);
+    const pool = this._pool().filter(t => !t.played && t.id !== excludeId);
     if (!pool.length) return null;
     let pick;
     if (this.shuffle) {
       pick = pool[Math.floor(Math.random() * pool.length)];
     } else {
-      const anchor = this.tracks.findIndex(t => t.id === excludeId);
+      const anchor = this._pool().findIndex(t => t.id === excludeId);
+      const source = this._pool();
       const start = anchor >= 0 ? anchor + 1 : 0;
-      for (let i = 0; i < this.tracks.length; i++) {
-        const t = this.tracks[(start + i) % this.tracks.length];
+      for (let i = 0; i < source.length; i++) {
+        const t = source[(start + i) % source.length];
         if (!t.played && t.id !== excludeId) { pick = t; break; }
       }
     }
@@ -482,6 +817,7 @@ const Library = {
   clearMarks() {
     this.tracks.forEach(t => { t.played = false; });
     try { localStorage.removeItem(this.playedKey); } catch (_) { /* ignore */ }
+    this._writeStore();
     this.render();
     window.setStatus && window.setStatus('Marcas ✓ reiniciadas');
   },

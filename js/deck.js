@@ -33,7 +33,19 @@ class Deck {
     this.chGain = null;
     this.eqLow = null;
     this.eqHigh = null;
+    this.fxFilter = null;
+    this.fxDry = null;
+    this.fxDelay = null;
+    this.fxFeedback = null;
+    this.fxWet = null;
     this.usingGraph = false;
+    this.fxType = 'off';
+    this.fxEcho = false;
+    this.fxEchoMix = 0.35;
+
+    this._playCounted = false;
+    this._brakeRaf = null;
+    this._startRaf = null;
 
     this.volume = 0.8;
     this.trim = 1;
@@ -67,6 +79,16 @@ class Deck {
     this.elExpelBtn = q('[data-expel]');
     this.elLedStrip = q('.led-strip');
     this.elProgress = q('.lcd-progress');
+    this.elDetail = {
+      title: q('#detail-' + this.id + '-title'),
+      artist: q('#detail-' + this.id + '-artist'),
+      folder: q('#detail-' + this.id + '-folder'),
+      duration: q('#detail-' + this.id + '-duration'),
+      left: q('#detail-' + this.id + '-left'),
+      bpm: q('#detail-' + this.id + '-bpm'),
+      pitch: q('#detail-' + this.id + '-pitch'),
+      state: q('#detail-' + this.id + '-state')
+    };
 
     this.btnPitchMinus = q('[data-pitch-minus]');
     this.btnPitchPlus = q('[data-pitch-plus]');
@@ -105,12 +127,26 @@ class Deck {
         this.eqHigh = this.ctx.createBiquadFilter();
         this.analyser = this.ctx.createAnalyser();
 
+        // Cadena de efectos: filtro (LP/HP) + eco en paralelo, TODO antes del
+        // analizador y del crossfader para no romper vúmetros ni AUTO.
+        this.fxFilter = this.ctx.createBiquadFilter();
+        this.fxDry = this.ctx.createGain();
+        this.fxDelay = this.ctx.createDelay(1.0);
+        this.fxFeedback = this.ctx.createGain();
+        this.fxWet = this.ctx.createGain();
+
         this.trimGain.gain.value = this.trim;
         this.chGain.gain.value = this.volume;
         this.eqLow.type = 'lowshelf';
         this.eqLow.frequency.value = 200;
         this.eqHigh.type = 'highshelf';
         this.eqHigh.frequency.value = 3200;
+        this.fxFilter.type = 'allpass';           // transparente mientras OFF
+        this.fxFilter.frequency.value = 20000;
+        this.fxDry.gain.value = 1;
+        this.fxDelay.delayTime.value = 0.28;
+        this.fxFeedback.gain.value = 0;
+        this.fxWet.gain.value = 0;
         this.analyser.fftSize = 256;
         // Reutilizar el búfer evita allocar 60 veces por segundo por deck.
         this._vuBuf = new Uint8Array(this.analyser.frequencyBinCount);
@@ -118,9 +154,17 @@ class Deck {
         this.srcNode.connect(this.trimGain);
         this.trimGain.connect(this.eqLow);
         this.eqLow.connect(this.eqHigh);
-        this.eqHigh.connect(this.chGain);
+        this.eqHigh.connect(this.fxFilter);
+        this.fxFilter.connect(this.fxDry);
+        this.fxDry.connect(this.chGain);
+        // Send de eco: filtro → delay → (realimentación + wet) → canal
+        this.fxFilter.connect(this.fxDelay);
+        this.fxDelay.connect(this.fxFeedback);
+        this.fxFeedback.connect(this.fxDelay);
+        this.fxDelay.connect(this.fxWet);
+        this.fxWet.connect(this.chGain);
         this.chGain.connect(this.analyser);
-        this.analyser.connect(xfGain);
+        this.analyser.connect(xfGain || window.masterGain || this.ctx.destination);
 
         this.usingGraph = true;
       } catch (err) {
@@ -136,7 +180,14 @@ class Deck {
     // Eventos del elemento de audio
     a.addEventListener('loadedmetadata', () => { this.applyPitch(); this.draw(); });
     a.addEventListener('canplay', () => { if (this.state === 'LOADING') this.setState('READY'); });
-    a.addEventListener('play', () => { this.setState('PLAYING'); });
+    a.addEventListener('play', () => {
+      this.setState('PLAYING');
+      // Un tema cuenta una sola vez por carga: reanudar tras pausa no suma.
+      if (!this._playCounted && this.track) {
+        this._playCounted = true;
+        if (typeof window.onDeckPlay === 'function') window.onDeckPlay(this);
+      }
+    });
     a.addEventListener('playing', () => { this.setState('PLAYING'); });
     a.addEventListener('pause', () => { if (this.state === 'PLAYING') this.setState('PAUSED'); });
     a.addEventListener('timeupdate', () => this.draw());
@@ -379,8 +430,10 @@ class Deck {
   // ---------- Carga y reproducción ----------
   load(track, autoplay = false) {
     if (!track || !track.url) return Promise.resolve(false);
+    this._cancelMotion();
     this.track = track;
     this.autoplayAfterLoad = autoplay;
+    this._playCounted = false;
     this.cuePoint = 0;
     this.setState('LOADING');
     this.showMessage(track.name || '-- cargando --');
@@ -406,6 +459,13 @@ class Deck {
   }
 
   play() {
+    // Si el usuario pulsa PLAY durante un frenado, se cancela el freno y se
+    // devuelve la velocidad a la base antes de reanudar.
+    if (this._brakeRaf) {
+      cancelAnimationFrame(this._brakeRaf);
+      this._brakeRaf = null;
+      try { this.audio.playbackRate = this._baseRate(); } catch (_) { /* ignore */ }
+    }
     if (!this.audio.src) {
       if (this.track && this.track.url) return this.load(this.track, true);
       return Promise.resolve(false);
@@ -434,6 +494,7 @@ class Deck {
   }
 
   eject() {
+    this._cancelMotion();
     this.stop();
     if (this.audio) {
       this.audio.removeAttribute('src');
@@ -496,12 +557,103 @@ class Deck {
     return v;
   }
 
+  _baseRate() {
+    // playbackRate de <audio> es un número (no AudioParam): el freno/arranque
+    // se hace con requestAnimationFrame, sin tocar el grafo de audio.
+    return Math.max(0.1, 1 + this.pitch / 100);
+  }
+
   applyPitch() {
-    if (this.audio) this.audio.playbackRate = 1 + this.pitch / 100;
+    if (this.audio && !this._brakeRaf && !this._startRaf) {
+      this.audio.playbackRate = this._baseRate();
+    }
   }
 
   nudgePitch(delta) { this.setPitch(this.pitch + delta); }
   resetPitch() { this.setPitch(0); }
+
+  // ---------- Efectos (Web Audio API) ----------
+  setFilter(type, freq) {
+    this.fxType = (type === 'lp' || type === 'hp') ? type : 'off';
+    if (!this.fxFilter || !this.ctx) return;
+    const target = Number.isFinite(freq) ? Math.max(40, Math.min(20000, freq)) : 20000;
+    this.fxFilter.type = this.fxType === 'off' ? 'allpass'
+      : (this.fxType === 'lp' ? 'lowpass' : 'highpass');
+    this.fxFilter.frequency.setTargetAtTime(target, this.ctx.currentTime, 0.012);
+    this.showMessage('FILTER  ' + (this.fxType === 'off' ? 'OFF' : this.fxType.toUpperCase()) +
+      '  ' + Math.round(target) + ' Hz');
+  }
+
+  setEcho(on, mix) {
+    this.fxEcho = !!on;
+    this.fxEchoMix = Math.max(0, Math.min(1, Number(mix) || 0));
+    if (!this.fxWet || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.fxWet.gain.setTargetAtTime(this.fxEcho ? this.fxEchoMix : 0, t, 0.02);
+    this.fxFeedback.gain.setTargetAtTime(
+      this.fxEcho ? Math.min(0.45, 0.2 + this.fxEchoMix * 0.25) : 0, t, 0.02);
+    this.showMessage('ECHO  ' + (this.fxEcho ? Math.round(this.fxEchoMix * 100) + '%' : 'OFF'));
+  }
+
+  // ---------- Frenado / arranque de plato ----------
+  _cancelMotion() {
+    if (this._brakeRaf) { cancelAnimationFrame(this._brakeRaf); this._brakeRaf = null; }
+    if (this._startRaf) { cancelAnimationFrame(this._startRaf); this._startRaf = null; }
+    if (this.audio) {
+      try { this.audio.playbackRate = this._baseRate(); } catch (_) { /* ignore */ }
+    }
+  }
+
+  brake(seconds = 1.4) {
+    if (!this.track || !this.audio.src) { this.showMessage('BRAKE: sin pista cargada'); return false; }
+    if (this._brakeRaf || this._startRaf) return false;
+    const a = this.audio;
+    if (a.paused) { this.showMessage('BRAKE: plato ya parado'); return false; }
+    this._cancelMotion();
+    const from = a.playbackRate || 1;
+    const t0 = performance.now();
+    const ms = Math.max(200, Number(seconds) * 1000);
+    this.setState('BRAKING');
+    const tick = () => {
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      a.playbackRate = Math.max(0.1, from * (1 - k));
+      if (k < 1) {
+        this._brakeRaf = requestAnimationFrame(tick);
+      } else {
+        this._brakeRaf = null;
+        try { a.pause(); } catch (_) { /* ignore */ }
+        a.playbackRate = this._baseRate();
+        this.setState('PAUSED');
+        this.showMessage('BRAKE  ' + this._formatTime(a.currentTime || 0));
+      }
+    };
+    this._brakeRaf = requestAnimationFrame(tick);
+    return true;
+  }
+
+  start(seconds = 0.9) {
+    if (!this.track || !this.audio.src) { this.showMessage('START: sin pista cargada'); return false; }
+    if (this._brakeRaf || this._startRaf) return false;
+    this._cancelMotion();
+    const a = this.audio;
+    a.playbackRate = 0.1;
+    const t0 = performance.now();
+    const ms = Math.max(200, Number(seconds) * 1000);
+    this.play();
+    const tick = () => {
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      a.playbackRate = 0.1 + (this._baseRate() - 0.1) * k;
+      if (k < 1) {
+        this._startRaf = requestAnimationFrame(tick);
+      } else {
+        this._startRaf = null;
+        a.playbackRate = this._baseRate();
+        this.showMessage('START  ' + this._formatTime(a.currentTime || 0));
+      }
+    };
+    this._startRaf = requestAnimationFrame(tick);
+    return true;
+  }
 
   // ---------- Volumen / trim / EQ ----------
   setVolume(v) {
@@ -563,8 +715,52 @@ class Deck {
     if (this.elStatus) this.elStatus.textContent = this.state;
     if (this.elLcd) this.elLcd.classList.toggle('lcd-loadable', !this.track);
 
+    this._drawDetail(ok, d, cur);
+    this._drawConsoleButtons(cur);
     this._updateVu();
     this._updateLEDs();
+  }
+
+  // LCD ampliada: título, artista, carpeta, duración, resto, BPM, pitch y estado.
+  _drawDetail(ok, d, cur) {
+    const det = this.elDetail;
+    if (!det) return;
+    const set = (el, v) => { if (el && el.textContent !== v) el.textContent = v; };
+    const t = this.track;
+    set(det.title, t ? (t.title || t.name) : '—');
+    set(det.artist, t ? (t.artist || '—') : '—');
+    set(det.folder, t && window.Library ? window.Library.folderName(t.folder) : '—');
+    set(det.duration, ok ? this._formatShort(d) : '--:--');
+    set(det.left, ok ? this._formatShort(Math.max(0, d - cur)) : '--:--');
+    set(det.bpm, t ? String(t.bpm || '---') : '---');
+    set(det.pitch, (this.pitch > 0 ? '+' : '') + this.pitch.toFixed(1) + '%');
+    set(det.state, this.state);
+    const cell = det.state && det.state.parentElement;
+    if (cell) {
+      cell.classList.toggle('live', this.state === 'PLAYING' || this.state === 'BRAKING');
+      cell.classList.toggle('warn', this.state === 'ERROR' || this.state === 'ENDED');
+    }
+  }
+
+  // Botones de consola con respuesta visual: PLAY/PAUSA, CUE en punto, EJECT inactivo.
+  _drawConsoleButtons(cur) {
+    const playing = this.state === 'PLAYING' || this.state === 'BRAKING';
+    if (this.elPlayBtn) {
+      const label = playing ? '❚❚' : '▶';
+      if (this.elPlayBtn.textContent !== label) this.elPlayBtn.textContent = label;
+      this.elPlayBtn.classList.toggle('active', playing);
+      this.elPlayBtn.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir');
+    }
+    if (this.elCueBtn) {
+      this.elCueBtn.classList.toggle('active', !!this.track && Math.abs(cur - this.cuePoint) < 0.2);
+    }
+    if (this.elExpelBtn) this.elExpelBtn.disabled = !this.track;
+    if (this.elTrackEq) this.elTrackEq.classList.toggle('active', this.eqIndex !== 0);
+  }
+
+  _formatShort(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
   }
 
   _formatTime(seconds) {

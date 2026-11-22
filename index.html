@@ -20,6 +20,20 @@
         <h1 class="brand-title">dj. hammer</h1>
         <span class="brand-sub">PCDJ · SILVER EDITION</span>
       </div>
+
+      <div class="session" aria-label="Reloj de sesión y contador de temas">
+        <div class="session-cell">
+          <span class="session-label">SESIÓN</span>
+          <span class="session-value" id="session-time">00:00:00</span>
+        </div>
+        <div class="session-cell">
+          <span class="session-label">PINCHADOS</span>
+          <span class="session-value" id="session-count">0</span>
+        </div>
+        <button type="button" class="top-btn session-reset" id="btn-session-reset"
+                title="Reiniciar sesión: reloj y contador. No borra las marcas ✓">↺ sesión</button>
+      </div>
+
       <nav class="top-controls" aria-label="Controles generales">
         <button type="button" class="top-btn" id="btn-cfg">cfg</button>
         <button type="button" class="top-btn" id="btn-info">i</button>
@@ -54,6 +68,17 @@
               </div>
             </div>
             <div class="lcd-msg" id="player-a-msg">NOT LOADED! Invalid floating point operation</div>
+          </div>
+
+          <div class="deck-detail" id="player-a-detail" aria-label="Detalles de la pista A">
+            <div class="detail-cell detail-wide"><span>TÍTULO</span><b id="detail-a-title">—</b></div>
+            <div class="detail-cell"><span>ARTISTA</span><b id="detail-a-artist">—</b></div>
+            <div class="detail-cell"><span>CARPETA</span><b id="detail-a-folder">—</b></div>
+            <div class="detail-cell"><span>DUR.</span><b id="detail-a-duration">--:--</b></div>
+            <div class="detail-cell"><span>RESTO</span><b id="detail-a-left">--:--</b></div>
+            <div class="detail-cell"><span>BPM</span><b id="detail-a-bpm">---</b></div>
+            <div class="detail-cell"><span>PITCH</span><b id="detail-a-pitch">0.0%</b></div>
+            <div class="detail-cell"><span>ESTADO</span><b id="detail-a-state">CLOSED</b></div>
           </div>
 
           <div class="player-vu" id="player-a-vu" aria-label="Vúmetro A">
@@ -124,6 +149,17 @@
             <div class="lcd-msg" id="player-b-msg">NOT LOADED! Invalid floating point operation</div>
           </div>
 
+          <div class="deck-detail" id="player-b-detail" aria-label="Detalles de la pista B">
+            <div class="detail-cell detail-wide"><span>TÍTULO</span><b id="detail-b-title">—</b></div>
+            <div class="detail-cell"><span>ARTISTA</span><b id="detail-b-artist">—</b></div>
+            <div class="detail-cell"><span>CARPETA</span><b id="detail-b-folder">—</b></div>
+            <div class="detail-cell"><span>DUR.</span><b id="detail-b-duration">--:--</b></div>
+            <div class="detail-cell"><span>RESTO</span><b id="detail-b-left">--:--</b></div>
+            <div class="detail-cell"><span>BPM</span><b id="detail-b-bpm">---</b></div>
+            <div class="detail-cell"><span>PITCH</span><b id="detail-b-pitch">0.0%</b></div>
+            <div class="detail-cell"><span>ESTADO</span><b id="detail-b-state">CLOSED</b></div>
+          </div>
+
           <div class="player-vu" id="player-b-vu" aria-label="Vúmetro B">
             <span class="vu-segment" data-level="-15"></span>
             <span class="vu-segment" data-level="-13"></span>
@@ -170,6 +206,71 @@
         </section>
       </div>
 
+      <!-- ZONA C2: BANCO DE EFECTOS (Web Audio API) -->
+      <section class="fx-rack" aria-label="Banco de efectos">
+        <div class="section-label"><span>FX · FILTER / ECHO / DECK MOTION</span><i aria-hidden="true"></i></div>
+        <div class="fx-grid">
+
+          <div class="fx-channel fx-a" data-fx-deck="A">
+            <span class="fx-badge">A</span>
+            <div class="fx-group">
+              <span class="fx-caption">FILTER</span>
+              <div class="fx-seg" role="group" aria-label="Tipo de filtro A">
+                <button type="button" data-filter="off" class="active">OFF</button>
+                <button type="button" data-filter="lp">LP</button>
+                <button type="button" data-filter="hp">HP</button>
+              </div>
+              <label class="fx-slider">CUT
+                <input type="range" data-cutoff min="0" max="100" step="1" value="100" aria-label="Corte del filtro A">
+                <output data-cutoff-val>12.0k</output>
+              </label>
+            </div>
+            <div class="fx-group">
+              <span class="fx-caption">ECHO</span>
+              <button type="button" class="fx-toggle" data-echo aria-pressed="false">OFF</button>
+              <label class="fx-slider">MIX
+                <input type="range" data-echo-mix min="0" max="1" step=".01" value=".35" aria-label="Mezcla del eco A">
+                <output data-echo-val>35%</output>
+              </label>
+            </div>
+            <div class="fx-group fx-motion">
+              <span class="fx-caption">PLATO</span>
+              <button type="button" data-brake title="Frenar el plato (desactivado con AUTO)">BRAKE</button>
+              <button type="button" data-start title="Arrancar el plato (desactivado con AUTO)">START</button>
+            </div>
+          </div>
+
+          <div class="fx-channel fx-b" data-fx-deck="B">
+            <span class="fx-badge">B</span>
+            <div class="fx-group">
+              <span class="fx-caption">FILTER</span>
+              <div class="fx-seg" role="group" aria-label="Tipo de filtro B">
+                <button type="button" data-filter="off" class="active">OFF</button>
+                <button type="button" data-filter="lp">LP</button>
+                <button type="button" data-filter="hp">HP</button>
+              </div>
+              <label class="fx-slider">CUT
+                <input type="range" data-cutoff min="0" max="100" step="1" value="100" aria-label="Corte del filtro B">
+                <output data-cutoff-val>12.0k</output>
+              </label>
+            </div>
+            <div class="fx-group">
+              <span class="fx-caption">ECHO</span>
+              <button type="button" class="fx-toggle" data-echo aria-pressed="false">OFF</button>
+              <label class="fx-slider">MIX
+                <input type="range" data-echo-mix min="0" max="1" step=".01" value=".35" aria-label="Mezcla del eco B">
+                <output data-echo-val>35%</output>
+              </label>
+            </div>
+            <div class="fx-group fx-motion">
+              <span class="fx-caption">PLATO</span>
+              <button type="button" data-brake title="Frenar el plato (desactivado con AUTO)">BRAKE</button>
+              <button type="button" data-start title="Arrancar el plato (desactivado con AUTO)">START</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ZONA C: MEZCLADOR CENTRAL -->
       <section class="mixer" aria-label="Mezclador central">
         <div class="section-label"><span>MIXER</span><i aria-hidden="true"></i></div>
@@ -213,9 +314,11 @@
       <!-- ZONA D: BIBLIOTECA -->
       <section class="library" aria-label="Biblioteca de pistas">
         <div class="lib-header">
-          <span class="lib-name">Default</span>
-          <button type="button" class="lib-btn">edit recordcase</button>
-          <span class="lib-hint">Doble clic = cargar · Clic derecho = menú · Hover = Play A/B · Arrastra a un player</span>
+          <span class="lib-name" id="lib-folder-name">Todas</span>
+          <div class="folder-chips" id="folder-chips" aria-label="Recordcases"></div>
+          <button type="button" class="lib-btn" id="btn-folder-new">+ carpeta</button>
+          <button type="button" class="lib-btn" id="btn-folder-edit">edit recordcase</button>
+          <span class="lib-hint">Doble clic = cargar · Clic derecho = menú · Hover = Play A/B · Arrastra a un player o a una carpeta</span>
         </div>
 
         <div class="lib-table">
@@ -241,6 +344,10 @@
           <input type="text" id="lib-filter" placeholder="Filtrar artista/título" aria-label="Filtrar pistas">
           <button type="button" id="btn-load-a" title="Cargar selección en Player A">→ A</button>
           <button type="button" id="btn-load-b" title="Cargar selección en Player B">→ B</button>
+          <select id="folder-assign" aria-label="Elegir carpeta de destino">
+            <option value="">Mover a carpeta…</option>
+          </select>
+          <button type="button" id="btn-folder-assign" title="Mover la pista seleccionada a la carpeta elegida">Mover</button>
           <button type="button" id="btn-auto">AUTO</button>
           <label class="check"><input type="checkbox" id="chk-shuffle">SHFL</label>
           <label class="check"><input type="checkbox" id="chk-hide-hidden">Ocultar ✓</label>
@@ -251,7 +358,7 @@
 
     <!-- ZONA E: ESTADO INFERIOR -->
     <footer class="status-bar">
-      <span>Pistas: <span id="track-count">0</span> · Doble clic = cargar · Clic derecho = menú · Hover = Play A/B</span>
+      <span>Pistas: <span id="track-count">0</span> · Doble clic = cargar · Clic derecho = menú · Hover = Play A/B · Arrastra a una carpeta</span>
       <span id="mini-viewer"></span>
       <span id="status-msg"></span>
     </footer>
@@ -274,6 +381,20 @@
     <p>Mezclador de dos decks con crossfader de potencia constante, modo AUTO y biblioteca local.</p>
     <p>Atajos: arrastra MP3 a la app, Ctrl+V para pegar archivos, doble clic en una fila para cargarla.</p>
     <p>Asignación rápida: clic derecho en una pista abre el menú para cargar o cargar y reproducir en A/B; al pasar el ratón aparecen los botones Play A / Play B.</p>
+    <p>Recordcases: crea carpetas, arrastra una fila a una carpeta o usa «Mover a recordcase». La cabecera muestra la hora, el tiempo de sesión y los temas pinchados.</p>
+    <p>FX: filtro LP/HP, eco y frenado/arranque de plato por deck (Web Audio). BRAKE/START se bloquean con AUTO activo para no romper el crossfade.</p>
+    <p>Persistencia: se guardan títulos, marcas y carpetas, nunca las URLs <code>blob:</code>. Tras recargar, vuelve a añadir los MP3 para reconectar el audio.</p>
+    <button type="button" data-close-dialog>Cerrar</button>
+  </dialog>
+
+  <dialog id="dlg-recordcase" class="metal-dialog">
+    <h2>Recordcases</h2>
+    <p>Crea, renombra o borra grupos. Las pistas se asignan arrastrándolas a una carpeta o desde el menú contextual.</p>
+    <div id="rc-list" class="rc-list"></div>
+    <div class="rc-new">
+      <input type="text" id="rc-new-name" placeholder="Nombre de la carpeta" aria-label="Nueva carpeta" maxlength="40">
+      <button type="button" id="rc-add">Crear</button>
+    </div>
     <button type="button" data-close-dialog>Cerrar</button>
   </dialog>
 
@@ -284,6 +405,9 @@
     <div class="ctx-divider" aria-hidden="true"></div>
     <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="1">Play A (Cargar y reproducir)</button>
     <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="1">Play B (Cargar y reproducir)</button>
+    <div class="ctx-divider" aria-hidden="true"></div>
+    <div class="ctx-folders-title">MOVER A RECORDCASE</div>
+    <div id="ctx-folders" class="ctx-folders"></div>
   </div>
 
   <script src="js/seg7.js" defer></script>

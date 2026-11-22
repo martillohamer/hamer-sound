@@ -31,6 +31,80 @@ const StateMachine = {
   }
 };
 
+// ---------- Hora del sistema, reloj de sesión y contador ----------
+const Session = {
+  start: Date.now(),
+  count: 0,
+  _timer: null,
+
+  init() {
+    const reset = $('#btn-session-reset');
+    if (reset && !reset._wired) {
+      reset._wired = true;
+      reset.addEventListener('click', () => this.reset());
+    }
+    if (!this._timer) this._timer = setInterval(() => this.tick(), 250);
+    this.tick();
+  },
+
+  _hms(ms) {
+    const t = Math.max(0, Math.floor(ms / 1000));
+    return [Math.floor(t / 3600), Math.floor(t / 60) % 60, t % 60]
+      .map(n => String(n).padStart(2, '0')).join(':');
+  },
+
+  tick() {
+    const now = new Date();
+    const clock = $('.clock-digits');
+    if (clock) {
+      const s = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+      if (clock.textContent !== s) clock.textContent = s;
+    }
+    const el = $('#session-time');
+    if (el) el.textContent = this._hms(Date.now() - this.start);
+    const c = $('#session-count');
+    if (c) c.textContent = String(this.count);
+    this._syncFxAvailability();
+  },
+
+  countPlay() {
+    this.count++;
+    const c = $('#session-count');
+    if (c) c.textContent = String(this.count);
+  },
+
+  reset() {
+    this.start = Date.now();
+    this.count = 0;
+    const mv = $('#mini-viewer');
+    if (mv) mv.textContent = '';
+    ['A', 'B'].forEach(key => {
+      const d = decks[key];
+      if (d && d.elStatus) { d.elStatus.style.color = ''; d.elStatus.style.textShadow = ''; }
+    });
+    this.tick();
+    window.setStatus && window.setStatus('Sesión reiniciada · reloj y contador a cero');
+  },
+
+  // BRAKE/START se bloquean con AUTO: así el crossfade automático nunca
+  // encuentra un deck con velocidad alterada a mitad de transición.
+  _syncFxAvailability() {
+    const blocked = !!(window.AutoMode && window.AutoMode.active);
+    document.querySelectorAll('.fx-motion button').forEach(b => { b.disabled = blocked; });
+  }
+};
+
+window.Session = Session; // accesible desde la consola para depurar
+
+// Lo llama deck.js cuando una pista empieza a sonar (una vez por carga).
+window.onDeckPlay = function (deck) {
+  if (typeof Session === 'undefined') return;
+  Session.countPlay();
+  window.setStatus && window.setStatus('▶ ' + (deck.track ? deck.track.title : '?') +
+    ' · pinchados ' + Session.count);
+};
+
 // ---------- Modo AUTO ----------
 const AutoMode = {
   crossfadeSec: 8,
@@ -153,8 +227,8 @@ const AutoMode = {
     }
 
     if (!this.announcedEnd) {
-      const pending = library && library.tracks
-        ? library.tracks.filter(t => !t.played && t.id !== sid).length : 0;
+      const pool = library && typeof library._pool === 'function' ? library._pool() : (library ? library.tracks : []);
+      const pending = pool ? pool.filter(t => !t.played && t.id !== sid).length : 0;
       if (pending === 0) this._announceEnd();
     }
   },
@@ -209,9 +283,8 @@ const AutoMode = {
     this._startBlink(entrante, '#2bd13a');
     window.setStatus && window.setStatus('AUTO: ahora suena «' + (entrante.track ? entrante.track.title : '?') + '»');
 
-    const pending = library && library.tracks
-      ? library.tracks.filter(t => !t.played).length
-      : 0;
+    const pool = library && typeof library._pool === 'function' ? library._pool() : (library ? library.tracks : []);
+    const pending = pool ? pool.filter(t => !t.played).length : 0;
     if (pending === 0) this._announceEnd();
   },
 
@@ -267,6 +340,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.getMaster && window.setMaster) window.setMaster(window.getMaster(), false);
   });
   safe('mixer', wireMixer);
+  safe('sesión', () => Session.init());
+  safe('fx', wireFxRack);
   safe('botones superiores', wireTopButtons);
   safe('botones INFO', wireInfoButtons);
   safe('vúmetro', drawMasterVU);
@@ -326,6 +401,61 @@ function wireMixer() {
     decks.B.setVolume(volB ? volB.value : 0.8);
     decks.B.setTrim(trimB ? trimB.value : 1);
   }
+}
+
+// ---------- Banco de efectos por deck ----------
+function wireFxRack() {
+  const cutoffToHz = (v) => Math.round(120 * Math.pow(100, Math.max(0, Math.min(1, Number(v) / 100))));
+  const fmtHz = (hz) => hz >= 1000 ? (hz / 1000).toFixed(1) + 'k' : String(hz);
+
+  document.querySelectorAll('.fx-channel').forEach(ch => {
+    const key = ch.getAttribute('data-fx-deck');
+    const deck = decks[key];
+    if (!deck) return;
+    let type = 'off';
+    let echo = false;
+    const cut = ch.querySelector('[data-cutoff]');
+    const cutOut = ch.querySelector('[data-cutoff-val]');
+    const echoMix = ch.querySelector('[data-echo-mix]');
+    const echoOut = ch.querySelector('[data-echo-val]');
+    const echoBtn = ch.querySelector('[data-echo]');
+    const filterBtns = Array.from(ch.querySelectorAll('[data-filter]'));
+
+    const applyFilter = () => deck.setFilter(type, cutoffToHz(cut ? cut.value : 100));
+
+    filterBtns.forEach(btn => btn.addEventListener('click', () => {
+      type = btn.getAttribute('data-filter');
+      filterBtns.forEach(b => b.classList.toggle('active', b === btn));
+      applyFilter();
+    }));
+    if (cut) cut.addEventListener('input', () => {
+      if (cutOut) cutOut.textContent = fmtHz(cutoffToHz(cut.value));
+      applyFilter();
+    });
+    if (echoBtn) echoBtn.addEventListener('click', () => {
+      echo = !echo;
+      echoBtn.setAttribute('aria-pressed', echo ? 'true' : 'false');
+      echoBtn.textContent = echo ? 'ON' : 'OFF';
+      deck.setEcho(echo, echoMix ? echoMix.value : 0.35);
+    });
+    if (echoMix) echoMix.addEventListener('input', () => {
+      const v = Number(echoMix.value) || 0;
+      if (echoOut) echoOut.textContent = Math.round(v * 100) + '%';
+      if (echo) deck.setEcho(true, v);
+    });
+
+    const guarded = (fn, label) => () => {
+      if (window.AutoMode && window.AutoMode.active) {
+        window.setStatus && window.setStatus('FX de plato desactivados con AUTO activo');
+        return;
+      }
+      if (fn.call(deck)) window.setStatus && window.setStatus('Player ' + key + ': ' + label);
+    };
+    const brake = ch.querySelector('[data-brake]');
+    const start = ch.querySelector('[data-start]');
+    if (brake) brake.addEventListener('click', guarded(deck.brake, 'BRAKE'));
+    if (start) start.addEventListener('click', guarded(deck.start, 'START'));
+  });
 }
 
 // ---------- Vúmetro máster ----------
