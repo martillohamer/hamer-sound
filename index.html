@@ -81,6 +81,31 @@
             <div class="detail-cell"><span>ESTADO</span><b id="detail-a-state">CLOSED</b></div>
           </div>
 
+          <div class="deck-eq" id="player-a-eq" aria-label="TRIM y ecualizador de 3 bandas A">
+            <div class="eq-band eq-band-trim">
+              <span class="eq-label">TRIM</span>
+              <input type="range" class="eq-fader" id="player-a-trim" min="-12" max="12" step=".5" value="0" aria-label="TRIM A (-12 a +12 dB)">
+              <output class="eq-val" id="player-a-trim-val" for="player-a-trim">0.0 dB</output>
+              <button type="button" class="eq-btn" id="player-a-trim-reset" title="TRIM a 0 dB (o doble clic en el fader)">0 dB</button>
+            </div>
+            <div class="eq-band">
+              <span class="eq-label">LOW</span>
+              <input type="range" class="eq-fader" id="player-a-low" min="-12" max="12" step=".5" value="0" aria-label="Graves A">
+              <output class="eq-val" id="player-a-low-val" for="player-a-low">0.0 dB</output>
+            </div>
+            <div class="eq-band">
+              <span class="eq-label">MID</span>
+              <input type="range" class="eq-fader" id="player-a-mid" min="-12" max="12" step=".5" value="0" aria-label="Medios A">
+              <output class="eq-val" id="player-a-mid-val" for="player-a-mid">0.0 dB</output>
+            </div>
+            <div class="eq-band">
+              <span class="eq-label">HIGH</span>
+              <input type="range" class="eq-fader" id="player-a-high" min="-12" max="12" step=".5" value="0" aria-label="Agudos A">
+              <output class="eq-val" id="player-a-high-val" for="player-a-high">0.0 dB</output>
+            </div>
+            <button type="button" class="eq-btn eq-reset-all" id="player-a-eq-reset" title="LOW/MID/HIGH a 0 dB (o doble clic en cada fader)">EQ 0</button>
+          </div>
+
           <div class="player-vu" id="player-a-vu" aria-label="Vúmetro A">
             <span class="vu-segment" data-level="-15"></span>
             <span class="vu-segment" data-level="-13"></span>
@@ -158,6 +183,31 @@
             <div class="detail-cell"><span>BPM</span><b id="detail-b-bpm">---</b></div>
             <div class="detail-cell"><span>PITCH</span><b id="detail-b-pitch">0.0%</b></div>
             <div class="detail-cell"><span>ESTADO</span><b id="detail-b-state">CLOSED</b></div>
+          </div>
+
+          <div class="deck-eq" id="player-b-eq" aria-label="TRIM y ecualizador de 3 bandas B">
+            <div class="eq-band eq-band-trim">
+              <span class="eq-label">TRIM</span>
+              <input type="range" class="eq-fader" id="player-b-trim" min="-12" max="12" step=".5" value="0" aria-label="TRIM B (-12 a +12 dB)">
+              <output class="eq-val" id="player-b-trim-val" for="player-b-trim">0.0 dB</output>
+              <button type="button" class="eq-btn" id="player-b-trim-reset" title="TRIM a 0 dB (o doble clic en el fader)">0 dB</button>
+            </div>
+            <div class="eq-band">
+              <span class="eq-label">LOW</span>
+              <input type="range" class="eq-fader" id="player-b-low" min="-12" max="12" step=".5" value="0" aria-label="Graves B">
+              <output class="eq-val" id="player-b-low-val" for="player-b-low">0.0 dB</output>
+            </div>
+            <div class="eq-band">
+              <span class="eq-label">MID</span>
+              <input type="range" class="eq-fader" id="player-b-mid" min="-12" max="12" step=".5" value="0" aria-label="Medios B">
+              <output class="eq-val" id="player-b-mid-val" for="player-b-mid">0.0 dB</output>
+            </div>
+            <div class="eq-band">
+              <span class="eq-label">HIGH</span>
+              <input type="range" class="eq-fader" id="player-b-high" min="-12" max="12" step=".5" value="0" aria-label="Agudos B">
+              <output class="eq-val" id="player-b-high-val" for="player-b-high">0.0 dB</output>
+            </div>
+            <button type="button" class="eq-btn eq-reset-all" id="player-b-eq-reset" title="LOW/MID/HIGH a 0 dB (o doble clic en cada fader)">EQ 0</button>
           </div>
 
           <div class="player-vu" id="player-b-vu" aria-label="Vúmetro B">
@@ -352,6 +402,7 @@
           <label class="check"><input type="checkbox" id="chk-shuffle">SHFL</label>
           <label class="check"><input type="checkbox" id="chk-hide-hidden">Ocultar ✓</label>
           <button type="button" id="btn-reset">Reiniciar ✓</button>
+          <button type="button" id="btn-clean-titles" title="Quita guiones bajos y códigos de descarga del título/artista. No toca el archivo ni el re-enlace.">Limpiar títulos</button>
         </div>
       </section>
     </main>
@@ -383,6 +434,8 @@
     <p>Asignación rápida: clic derecho en una pista abre el menú para cargar o cargar y reproducir en A/B; al pasar el ratón aparecen los botones Play A / Play B.</p>
     <p>Recordcases: crea carpetas, arrastra una fila a una carpeta o usa «Mover a recordcase». La cabecera muestra la hora, el tiempo de sesión y los temas pinchados.</p>
     <p>FX: filtro LP/HP, eco y frenado/arranque de plato por deck (Web Audio). BRAKE/START se bloquean con AUTO activo para no romper el crossfade.</p>
+    <p>Cabina: cada deck tiene TRIM (±12 dB) y EQ de 3 bandas LOW/MID/HIGH (±12 dB). Arrastra o usa la rueda; doble clic en un fader lo pone a 0 dB, y «0 dB» / «EQ 0» reinician al instante. El TRIM se guarda por pista.</p>
+    <p>«Limpiar títulos» quita guiones bajos y códigos de descarga de título/artista sin tocar el archivo ni su re-enlace. También está en el menú derecho de cada pista.</p>
     <p>Persistencia: se guardan títulos, marcas y carpetas, nunca las URLs <code>blob:</code>. Tras recargar, vuelve a añadir los MP3 para reconectar el audio.</p>
     <button type="button" data-close-dialog>Cerrar</button>
   </dialog>
@@ -405,6 +458,8 @@
     <div class="ctx-divider" aria-hidden="true"></div>
     <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="1">Play A (Cargar y reproducir)</button>
     <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="1">Play B (Cargar y reproducir)</button>
+    <div class="ctx-divider" aria-hidden="true"></div>
+    <button type="button" role="menuitem" data-ctx-clean title="Limpiar título y artista de esta pista (no modifica el archivo)">Limpiar título</button>
     <div class="ctx-divider" aria-hidden="true"></div>
     <div class="ctx-folders-title">MOVER A RECORDCASE</div>
     <div id="ctx-folders" class="ctx-folders"></div>

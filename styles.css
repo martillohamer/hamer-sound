@@ -162,11 +162,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .player {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 26px 78px;
-  grid-template-rows: auto auto auto auto;
+  grid-template-rows: auto auto auto auto auto;
   grid-template-areas:
     "title title title"
     "screen vu pitch"
     "detail detail detail"
+    "eq eq eq"
     "controls controls controls";
   gap: 10px;
   min-width: 0;
@@ -347,7 +348,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 }
 
 .pitch-fader,
-.channel-fader {
+.channel-fader,
+.eq-fader {
   appearance: none;
   -webkit-appearance: none;
   writing-mode: vertical-lr;
@@ -362,11 +364,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   cursor: ns-resize;
 }
 .pitch-fader::-webkit-slider-runnable-track,
-.channel-fader::-webkit-slider-runnable-track { width: 4px; background: #050708; border-radius: 2px; }
+.channel-fader::-webkit-slider-runnable-track,
+.eq-fader::-webkit-slider-runnable-track { width: 4px; background: #050708; border-radius: 2px; }
 .pitch-fader::-moz-range-track,
-.channel-fader::-moz-range-track { width: 4px; background: #050708; border-radius: 2px; }
+.channel-fader::-moz-range-track,
+.eq-fader::-moz-range-track { width: 4px; background: #050708; border-radius: 2px; }
 .pitch-fader::-webkit-slider-thumb,
-.channel-fader::-webkit-slider-thumb {
+.channel-fader::-webkit-slider-thumb,
+.eq-fader::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 24px;
@@ -378,7 +383,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   margin-left: -10px;
 }
 .pitch-fader::-moz-range-thumb,
-.channel-fader::-moz-range-thumb {
+.channel-fader::-moz-range-thumb,
+.eq-fader::-moz-range-thumb {
   width: 24px;
   height: 11px;
   border: 1px solid #4c565d;
@@ -402,6 +408,50 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   line-height: 1;
 }
 .pitch-buttons button:active { background: #12171a; }
+
+/* TRIM + EQ de 3 bandas por deck (antes del analizador y del rack FX) */
+.deck-eq {
+  grid-area: eq;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #0a0d0f;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #141a1d, #0d1215);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .8);
+}
+.eq-band { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.eq-label { color: var(--gris-met); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.eq-band-trim .eq-label { color: #ffe08a; }
+.eq-fader { width: 22px; height: 66px; }
+.eq-val {
+  width: 100%;
+  padding: 1px 0;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #0d1113;
+  color: #cfe4d6;
+  font: 700 10px/1.2 "Courier New", monospace;
+  text-align: center;
+  white-space: nowrap;
+}
+.eq-btn {
+  padding: 3px 5px;
+  color: var(--plata);
+  border: 1px solid #0a0c0e;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #3c454b, #22282c);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.eq-btn:hover { background: linear-gradient(180deg, #4c565d, #2b3237); }
+.eq-btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .7); }
+.eq-reset-all { align-self: center; margin-bottom: 2px; }
 
 /* Transporte */
 .player-controls { grid-area: controls; min-width: 0; }
@@ -1054,6 +1104,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   .detail-cell.detail-wide { grid-column: span 2; }
   .fx-channel { grid-template-columns: 22px repeat(2, minmax(0, 1fr)); gap: 7px; padding: 8px; }
   .fx-motion { grid-column: 2 / -1; }
+  .deck-eq { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 6px; }
+  .eq-fader { height: 56px; }
+  .eq-val { font-size: 9px; }
+  .eq-reset-all { grid-column: 1 / -1; }
   .session { gap: 6px; padding: 4px 7px; }
   .session-value { font-size: 13px; }
 }

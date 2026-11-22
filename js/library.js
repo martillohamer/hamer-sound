@@ -9,6 +9,9 @@ if (typeof $ === 'undefined') {
   };
 }
 
+// Tokens en mayúsculas que pueden ser parte del nombre artístico (no código de descarga).
+const TITLE_KEEP = new Set(['AC', 'DC', 'EP', 'LP', 'FM', 'AM', 'DJ', 'MC', 'II', 'III', 'IV']);
+
 const Library = {
   tracks: [],
   folders: [],
@@ -22,6 +25,7 @@ const Library = {
   libKey: 'hammer:library:v1',
   _inited: false,
   _assignTarget: '',
+  _storeTimer: null,
 
   // ---------- Init ----------
   init() {
@@ -62,6 +66,12 @@ const Library = {
 
     const reset = $('#btn-reset');
     if (reset) reset.addEventListener('click', () => self.clearMarks());
+
+    const clean = $('#btn-clean-titles');
+    if (clean) clean.addEventListener('click', () => {
+      // Con pista seleccionada: solo esa. Sin selección: toda la biblioteca.
+      self.cleanTitles(self.sel || null);
+    });
 
     const loadA = $('#btn-load-a');
     const loadB = $('#btn-load-b');
@@ -266,8 +276,19 @@ const Library = {
     } catch (_) { return {}; }
   },
 
+  // Los cambios de TRIM llegan desde un fader: agrupamos escrituras para no
+  // serializar la biblioteca en cada evento 'input' de la rueda del ratón.
+  _scheduleStore() {
+    if (this._storeTimer) clearTimeout(this._storeTimer);
+    this._storeTimer = setTimeout(() => {
+      this._storeTimer = null;
+      this._writeStore();
+    }, 150);
+  },
+
   _writeStore() {
     try {
+      if (this._storeTimer) { clearTimeout(this._storeTimer); this._storeTimer = null; }
       const data = {
         folders: this.folders.map(f => ({ id: String(f.id), name: f.name })),
         activeFolder: String(this.activeFolder),
@@ -277,7 +298,7 @@ const Library = {
           name: t.name, title: t.title, artist: t.artist,
           size: t.size, lastModified: t.lastModified,
           version: t.version, comment: t.comment, bpm: t.bpm,
-          folder: t.folder, played: !!t.played
+          trimDb: t.trimDb, folder: t.folder, played: !!t.played
         }))
       };
       localStorage.setItem(this.libKey, JSON.stringify(data));
@@ -313,7 +334,7 @@ const Library = {
       const key = t.key || [t.name, t.size, t.lastModified].join('|');
       if (seen.has(key)) return null;
       seen.add(key);
-      return {
+      const track = {
         id: t.id != null ? t.id : Date.now() + Math.random(),
         name: t.name || 'pista',
         title: t.title || t.name || 'pista',
@@ -329,6 +350,12 @@ const Library = {
         folder: ids.has(String(t.folder)) ? String(t.folder) : 'default',
         played: typeof t.played === 'boolean' ? t.played : !!played[key]
       };
+      // Solo si venía guardado: las pistas sin preferencia conservan el TRIM
+      // actual del deck al cargarlas, como en una mesa real.
+      if (typeof t.trimDb === 'number' && Number.isFinite(t.trimDb)) {
+        track.trimDb = Math.max(-12, Math.min(12, t.trimDb));
+      }
+      return track;
     }).filter(Boolean);
 
     const restoredActive = String(data.activeFolder);
@@ -336,10 +363,38 @@ const Library = {
   },
 
   // ---------- Archivos ----------
+  // Nombre de IDENTIDAD: no se toca. Es la base de la clave
+  // name|size|lastModified que permite re-enlazar el MP3 tras recargar.
   _cleanName(f) {
     return (f.name || 'pista')
       .replace(/\.[^.]+$/, '')
       .replace(/^SpotiDown\.App\s*-\s*/i, '');
+  },
+
+  // Limpieza solo de LECTURA (title/artist): sufijos típicos de descarga
+  // (_3jsRecKTSRw, _vyc0eT8t_QU, -xY7aBc0123...), guiones bajos y espacios
+  // redundantes. Jamás modifica name/size/fecha/url ni el archivo en disco.
+  _cleanTitle(name) {
+    let out = String(name || '').replace(/^SpotiDown\.App\s*-\s*/i, '');
+
+    let stripped = true;
+    while (stripped) {
+      stripped = false;
+      const m = out.match(/[_-]([A-Za-z0-9]{2,})$/);
+      if (!m) break;
+      const token = m[1];
+      // Un código lleva dígitos mezclados con letras (3jsRecKTSRw,
+      // vyc0eT8t), es numérico largo (2020) o un sufijo corto en mayúsculas
+      // (QU, HQ). Una palabra normal como "Cancion" NO se toca.
+      const looksCode = (/\d/.test(token) && /[A-Za-z]/.test(token)) ||
+        /\d{3,}/.test(token) ||
+        (/^[A-Z]{2,4}$/.test(token) && !TITLE_KEEP.has(token));
+      if (!looksCode) break;
+      out = out.slice(0, m.index);
+      stripped = true;
+    }
+
+    return out.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
   },
 
   add(files) {
@@ -374,9 +429,10 @@ const Library = {
         return;
       }
 
-      const sep = name.lastIndexOf(' - ');
-      const title = sep > 0 ? name.slice(0, sep).trim() : name.trim();
-      const artist = sep > 0 ? name.slice(sep + 3).trim() : '';
+      const display = this._cleanTitle(name);
+      const sep = display.lastIndexOf(' - ');
+      const title = sep > 0 ? display.slice(0, sep).trim() : display.trim();
+      const artist = sep > 0 ? display.slice(sep + 3).trim() : '';
       const track = {
         id: Date.now() + Math.random(),
         name, title, artist,
@@ -419,6 +475,41 @@ const Library = {
   addFiles(files) {
     this.add(files);
     return this.tracksForFiles(files);
+  },
+
+  // ---------- TRIM por pista / limpieza de títulos ----------
+  setTrackTrim(track, db) {
+    if (!track) return;
+    const v = Math.max(-12, Math.min(12, Number(db) || 0));
+    if (track.trimDb === v) return;
+    track.trimDb = v;   // metadato: la URL blob: jamás entra en _writeStore()
+    this._scheduleStore();
+  },
+
+  // Aplica _cleanTitle a una pista (o a todas) sin tocar la identidad del
+  // archivo: name, size, lastModified y url quedan intactos.
+  cleanTitles(track) {
+    const targets = track ? [track] : this.tracks;
+    let changed = 0;
+    targets.forEach(t => {
+      const display = this._cleanTitle(t.name);
+      const sep = display.lastIndexOf(' - ');
+      const title = sep > 0 ? display.slice(0, sep).trim() : display.trim();
+      const artist = sep > 0 ? display.slice(sep + 3).trim() : '';
+      if (t.title !== title || t.artist !== artist) {
+        t.title = title;
+        t.artist = artist;
+        changed++;
+      }
+    });
+    if (changed) {
+      this._writeStore();
+      this.render();
+    }
+    window.setStatus && window.setStatus(changed
+      ? 'Títulos limpios: ' + changed + ' pista(s) · archivo intacto'
+      : 'Los títulos ya estaban limpios');
+    return changed;
   },
 
   // ---------- Recordcases ----------
@@ -643,6 +734,15 @@ const Library = {
     this._ctxMenu = menu;
 
     menu.addEventListener('click', (e) => {
+      const cleanItem = e.target.closest('[data-ctx-clean]');
+      if (cleanItem && menu.contains(cleanItem)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const track = self._ctxTrack;
+        self.hideContextMenu();
+        if (track) self.cleanTitles(track);
+        return;
+      }
       const folderItem = e.target.closest('[data-ctx-folder]');
       if (folderItem && menu.contains(folderItem)) {
         e.preventDefault();

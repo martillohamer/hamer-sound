@@ -10,11 +10,14 @@ if (typeof $ === 'undefined') {
 }
 
 const EQ_PRESETS = [
-  { name: 'FLAT', low: 0, high: 0 },
-  { name: 'BASS', low: 6, high: -2 },
-  { name: 'TREBLE', low: -2, high: 6 },
-  { name: 'VOCAL', low: -3, high: 3 }
+  { name: 'FLAT', low: 0, mid: 0, high: 0 },
+  { name: 'BASS', low: 6, mid: -2, high: -2 },
+  { name: 'TREBLE', low: -2, mid: 0, high: 6 },
+  { name: 'VOCAL', low: -3, mid: 3, high: 3 }
 ];
+const EQ_BANDS = ['low', 'mid', 'high'];
+const EQ_RANGE = 12; // dB
+const dbToGain = (db) => Math.pow(10, (Number(db) || 0) / 20);
 
 class Deck {
   constructor(options = {}) {
@@ -29,9 +32,11 @@ class Deck {
 
     this.analyser = null;
     this.srcNode = null;
-    this.trimGain = null;
+    this.inputGain = null;   // TRIM en dB (por deck, guardado por pista)
+    this.trimGain = null;    // trim lineal heredado (#vol-b2, solo B)
     this.chGain = null;
     this.eqLow = null;
+    this.eqMid = null;
     this.eqHigh = null;
     this.fxFilter = null;
     this.fxDry = null;
@@ -48,7 +53,9 @@ class Deck {
     this._startRaf = null;
 
     this.volume = 0.8;
-    this.trim = 1;
+    this.trim = 1;           // trim lineal heredado (0-1)
+    this.trimDb = 0;         // TRIM profesional (-12 .. +12 dB)
+    this.eq = { low: 0, mid: 0, high: 0 }; // ganancias dB de LOW/MID/HIGH
     this.pitch = 0;          // -24 .. +24 (%)
     this.cuePoint = 0;
     this.lv = 0;
@@ -98,6 +105,19 @@ class Deck {
     this.elTrackRew = q('[data-track-rew]');
     this.elTrackFf = q('[data-track-ff]');
 
+    // TRIM y EQ de 3 bandas (IDs por deck, ver index.html)
+    const pid = (suffix) => '#player-' + this.id + '-' + suffix;
+    this.elTrim = q(pid('trim'));
+    this.elTrimOut = q(pid('trim-val'));
+    this.elTrimReset = q(pid('trim-reset'));
+    this.elEqReset = q(pid('eq-reset'));
+    this.elEqBands = {};
+    this.elEqOuts = {};
+    EQ_BANDS.forEach(b => {
+      this.elEqBands[b] = q(pid(b));
+      this.elEqOuts[b] = q(pid(b + '-val'));
+    });
+
     this.vuSegments = this.elVuMeter
       ? Array.from(this.elVuMeter.querySelectorAll('.vu-segment'))
       : [];
@@ -121,9 +141,11 @@ class Deck {
     if (this.ctx && xfGain && typeof this.ctx.createMediaElementSource === 'function') {
       try {
         this.srcNode = this.ctx.createMediaElementSource(a);
+        this.inputGain = this.ctx.createGain();
         this.trimGain = this.ctx.createGain();
         this.chGain = this.ctx.createGain();
         this.eqLow = this.ctx.createBiquadFilter();
+        this.eqMid = this.ctx.createBiquadFilter();
         this.eqHigh = this.ctx.createBiquadFilter();
         this.analyser = this.ctx.createAnalyser();
 
@@ -135,12 +157,19 @@ class Deck {
         this.fxFeedback = this.ctx.createGain();
         this.fxWet = this.ctx.createGain();
 
+        this.inputGain.gain.value = dbToGain(this.trimDb);
         this.trimGain.gain.value = this.trim;
         this.chGain.gain.value = this.volume;
         this.eqLow.type = 'lowshelf';
         this.eqLow.frequency.value = 200;
+        this.eqLow.gain.value = this.eq.low;
+        this.eqMid.type = 'peaking';
+        this.eqMid.frequency.value = 1000;
+        this.eqMid.Q.value = 1;
+        this.eqMid.gain.value = this.eq.mid;
         this.eqHigh.type = 'highshelf';
         this.eqHigh.frequency.value = 3200;
+        this.eqHigh.gain.value = this.eq.high;
         this.fxFilter.type = 'allpass';           // transparente mientras OFF
         this.fxFilter.frequency.value = 20000;
         this.fxDry.gain.value = 1;
@@ -151,9 +180,14 @@ class Deck {
         // Reutilizar el búfer evita allocar 60 veces por segundo por deck.
         this._vuBuf = new Uint8Array(this.analyser.frequencyBinCount);
 
-        this.srcNode.connect(this.trimGain);
+        // TRIM → LOW → MID → HIGH → FX → chGain → analyser → crossfader.
+        // El analizador sigue detrás de chGain y delante del crossfader
+        // (invariante de vúmetros): los vúmetros y AUTO no cambian.
+        this.srcNode.connect(this.inputGain);
+        this.inputGain.connect(this.trimGain);
         this.trimGain.connect(this.eqLow);
-        this.eqLow.connect(this.eqHigh);
+        this.eqLow.connect(this.eqMid);
+        this.eqMid.connect(this.eqHigh);
         this.eqHigh.connect(this.fxFilter);
         this.fxFilter.connect(this.fxDry);
         this.fxDry.connect(this.chGain);
@@ -213,6 +247,9 @@ class Deck {
     if (this.elExpelBtn) this.elExpelBtn.addEventListener('click', () => this.eject());
     if (this.elTrackPrev) this.elTrackPrev.addEventListener('click', () => this._adjacent(-1));
     if (this.elTrackEq) this.elTrackEq.addEventListener('click', () => this._cycleEq());
+
+    // TRIM / EQ: arrastre, rueda, doble clic y botones de reinicio
+    this._bindEqUI();
 
     // Ratón: drag & drop, LCD, barra de progreso, rueda de pitch y «/» con mantenido
     this._bindPointerUI();
@@ -435,6 +472,10 @@ class Deck {
     this.autoplayAfterLoad = autoplay;
     this._playCounted = false;
     this.cuePoint = 0;
+    // TRIM guardado por pista (solo metadatos; la URL blob: nunca se persiste).
+    if (typeof track.trimDb === 'number' && Number.isFinite(track.trimDb)) {
+      this.setTrimDb(track.trimDb);
+    }
     this.setState('LOADING');
     this.showMessage(track.name || '-- cargando --');
     this.audio.src = track.url;
@@ -656,25 +697,135 @@ class Deck {
   }
 
   // ---------- Volumen / trim / EQ ----------
+  _applyNativeVolume() {
+    if (!this.usingGraph && this.audio) {
+      // Sin Web Audio todo se aplica en el elemento <audio>.
+      this.audio.volume = Math.max(0, Math.min(1,
+        this.volume * this.trim * dbToGain(this.trimDb)));
+    }
+  }
+
   setVolume(v) {
     this.volume = Math.max(0, Math.min(1, Number(v) || 0));
     if (this.usingGraph && this.chGain) this.chGain.gain.value = this.volume;
-    else if (this.audio) this.audio.volume = this.volume * this.trim;
+    else this._applyNativeVolume();
   }
 
+  // Trim lineal heredado del mezclador (#vol-b2). Se conserva tal cual.
   setTrim(v) {
     this.trim = Math.max(0, Math.min(1, Number(v) || 0));
     if (this.usingGraph && this.trimGain) this.trimGain.gain.value = this.trim;
-    else if (this.audio) this.audio.volume = this.volume * this.trim;
+    else this._applyNativeVolume();
+  }
+
+  // TRIM profesional en dB (-12 .. +12), guardado por pista si procede.
+  setTrimDb(db) {
+    const v = Math.max(-EQ_RANGE, Math.min(EQ_RANGE, Number(db) || 0));
+    this.trimDb = v;
+    const gain = dbToGain(v);
+    if (this.usingGraph && this.inputGain) {
+      try { this.inputGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.01); }
+      catch (_) { this.inputGain.gain.value = gain; }
+    } else {
+      this._applyNativeVolume();
+    }
+    this._syncEqUI();
+    return v;
+  }
+
+  resetTrim() {
+    this.setTrimDb(0);
+    this._persistTrim();
+    this.showMessage('TRIM  0.0 dB');
+  }
+
+  _persistTrim() {
+    const lib = window.Library;
+    if (this.track && lib && typeof lib.setTrackTrim === 'function') {
+      lib.setTrackTrim(this.track, this.trimDb);
+    }
+  }
+
+  _setBand(band, db) {
+    if (EQ_BANDS.indexOf(band) < 0) return 0;
+    const v = Math.max(-EQ_RANGE, Math.min(EQ_RANGE, Number(db) || 0));
+    this.eq[band] = v;
+    const node = band === 'low' ? this.eqLow : band === 'mid' ? this.eqMid : this.eqHigh;
+    if (node) {
+      try { node.gain.setTargetAtTime(v, this.ctx.currentTime, 0.012); }
+      catch (_) { node.gain.value = v; }
+    }
+    return v;
+  }
+
+  // Un ajuste manual rompe el preset; el botón «=» vuelve a recorrerlos.
+  setEqBand(band, db) {
+    const v = this._setBand(band, db);
+    this.eqIndex = 0;
+    if (this.elTrackEq) this.elTrackEq.classList.remove('active');
+    this._syncEqUI();
+    this.showMessage('EQ ' + band.toUpperCase() + '  ' + this._fmtDb(v));
+    return v;
   }
 
   _cycleEq() {
     this.eqIndex = (this.eqIndex + 1) % EQ_PRESETS.length;
     const p = EQ_PRESETS[this.eqIndex];
-    if (this.eqLow) this.eqLow.gain.value = p.low;
-    if (this.eqHigh) this.eqHigh.gain.value = p.high;
+    EQ_BANDS.forEach(b => this._setBand(b, p[b] || 0));
     if (this.elTrackEq) this.elTrackEq.classList.toggle('active', this.eqIndex !== 0);
+    this._syncEqUI();
     this.showMessage('EQ  ' + p.name);
+  }
+
+  resetEq() {
+    EQ_BANDS.forEach(b => this._setBand(b, 0));
+    this.eqIndex = 0;
+    if (this.elTrackEq) this.elTrackEq.classList.remove('active');
+    this._syncEqUI();
+    this.showMessage('EQ  FLAT  (0 dB)');
+  }
+
+  _fmtDb(db) {
+    const v = Number(db) || 0;
+    return (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
+  }
+
+  _syncEqUI() {
+    if (this.elTrim) this.elTrim.value = String(this.trimDb);
+    if (this.elTrimOut) this.elTrimOut.textContent = this._fmtDb(this.trimDb);
+    EQ_BANDS.forEach(b => {
+      const input = this.elEqBands[b];
+      if (input) input.value = String(this.eq[b]);
+      const out = this.elEqOuts[b];
+      if (out) out.textContent = this._fmtDb(this.eq[b]);
+    });
+  }
+
+  _bindEqUI() {
+    // Arrastre nativo del range + rueda; doble clic y botón = vuelta a 0 dB.
+    const bindFader = (input, apply, onCommit) => {
+      if (!input) return;
+      input.addEventListener('input', () => apply(Number(input.value)));
+      input.addEventListener('change', () => { if (onCommit) onCommit(); });
+      input.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        apply(0);
+        if (onCommit) onCommit();
+      });
+      input.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const step = Number(input.step) || 0.5;
+        apply(Number(input.value) + (e.deltaY > 0 ? -step : step));
+        if (onCommit) onCommit();
+      }, { passive: false });
+    };
+
+    const trimCommit = () => this._persistTrim();
+    bindFader(this.elTrim, (v) => this.setTrimDb(v), trimCommit);
+    EQ_BANDS.forEach(b => bindFader(this.elEqBands[b], (v) => this.setEqBand(b, v)));
+    if (this.elTrimReset) this.elTrimReset.addEventListener('click', () => this.resetTrim());
+    if (this.elEqReset) this.elEqReset.addEventListener('click', () => this.resetEq());
+    this._syncEqUI();
   }
 
   // ---------- Navegación / seek ----------
