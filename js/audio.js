@@ -96,11 +96,30 @@ function setXf(v, opts = {}) {
   }
 }
 
+/**
+ * Ganancia efectiva del crossfader para un deck ('a'|'b').
+ * Se usa tanto para el audio como para que los vúmetros sigan al fader,
+ * incluso cuando no hay Web Audio disponible.
+ */
+function getXfGain(id) {
+  const key = String(id).toUpperCase() === 'B' ? 'B' : 'A';
+  const slot = xfade[key];
+  if (slot && slot.gain) return slot.gain.gain.value;
+  // Sin AudioContext: derivar del control con la misma curva cos/sen.
+  const cf = $('#crossfader');
+  const v = cf ? clamp(Number(cf.value) || 0, -1, 1) : 0;
+  const a = ((v + 1) / 2) * Math.PI / 2;
+  return key === 'A' ? Math.cos(a) : Math.sin(a);
+}
+
 function setMaster(v, store = true) {
   v = clamp(Number(v) || 0, 0, 1);
   if (master) master.gain.value = v;
-  const m = $('#master');
-  if (m && String(m.value) !== String(v)) m.value = String(v);
+  // Un único punto de sincronía: el fader del mixer y el del diálogo cfg
+  // deben reflejar siempre el mismo valor (también al entrar en STANDBY).
+  [$('#master'), $('#cfg-master')].forEach(el => {
+    if (el && String(el.value) !== String(v)) el.value = String(v);
+  });
   if (store) {
     try { localStorage.setItem('hammer:master', String(v)); } catch (_) { /* ignore */ }
   }
@@ -117,6 +136,7 @@ function getMaster() {
 // Exponer antes de que deck.js intente usarlo
 window.xfade = xfade;
 window.setXf = setXf;
+window.getXfGain = getXfGain;
 window.setMaster = setMaster;
 window.getMaster = getMaster;
 window.initAudio = initAudio;
@@ -124,5 +144,5 @@ window.initAudio = initAudio;
 initAudio();
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { initAudio, get ctx() { return ctx; }, xfade, setXf, setMaster, getMaster };
+  module.exports = { initAudio, get ctx() { return ctx; }, xfade, setXf, getXfGain, setMaster, getMaster };
 }

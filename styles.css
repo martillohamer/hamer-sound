@@ -597,6 +597,92 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   pointer-events: none;
 }
 
+/* ---------- Asignación rápida: botonera hover y menú contextual ---------- */
+/*
+ * La botonera vive DENTRO de la última celda, en un flex container junto al
+ * texto del comment. Los botones están siempre en el layout (visibility:
+ * hidden), por eso al aparecer no desplazan columnas ni tapan el texto: el
+ * espacio ya está reservado y el comment se elipsa antes de llegar a ellos.
+ */
+.lib-table tbody td.comment-cell { padding: 4px 8px; }
+.comment-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.comment-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-quick {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  visibility: hidden;
+  pointer-events: none;
+}
+.lib-table tbody tr:hover .row-quick,
+.lib-table tbody tr.row-hover .row-quick,
+.lib-table tbody tr.sel .row-quick {
+  visibility: visible;
+  pointer-events: auto;
+}
+.quick-btn {
+  padding: 2px 6px;
+  color: var(--aluminio);
+  border: 1px solid #0a0c0e;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #4d575e, #252b2f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 1px 2px rgba(0, 0, 0, .6);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.quick-btn:hover { background: linear-gradient(180deg, #5c6770, #30383d); color: #fff; }
+.quick-btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .7); }
+.quick-a { color: #cfe4d6; }
+.quick-b { color: #ffe08a; }
+
+/* Menú contextual metálico, posicionado con coordenadas de viewport */
+.track-context-menu {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  min-width: 226px;
+  padding: 5px;
+  border: 1px solid #080a0c;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #3b444b, #20262b);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .72), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.track-context-menu.open { display: block; }
+.track-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  color: var(--aluminio);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+  white-space: nowrap;
+}
+.track-context-menu button:hover {
+  color: #fff;
+  border-color: #0a0c0e;
+  background: linear-gradient(180deg, #4f5a62, #2d353a);
+}
+.track-context-menu button:active { background: #171c1f; }
+.track-context-menu button[data-ctx-play="1"] { color: #cfe4d6; }
+.track-context-menu button[data-ctx-play="1"]:hover { color: #e8ffef; }
+.ctx-divider { height: 1px; margin: 4px 3px; background: #12171a; }
+
 .lib-controls {
   display: flex;
   align-items: center;

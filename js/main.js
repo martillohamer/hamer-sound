@@ -39,11 +39,20 @@ const AutoMode = {
   transitionTimer: null,
   pendingTransition: null,
   suppressedFor: null,
+  announcedEnd: false,
   blinks: [],
 
   start(decksRef) {
     this.decks = decksRef || decks;
     this.active = true;
+    this.announcedEnd = false;
+    this.suppressedFor = null;
+    // Un reinicio no debe heredarse de la sesión anterior: fuerza una
+    // precarga nueva y evita que se reutilice una pista ya marcada.
+    for (const key of ['A', 'B']) {
+      const d = this.decks && this.decks[key];
+      if (d) { d._autoPreloadedFor = null; d._autoPreloadedTrack = null; }
+    }
     const btn = $('#btn-auto');
     if (btn) btn.classList.add('active');
     if (!this.interval) this.interval = setInterval(() => this._check(), 250);
@@ -55,6 +64,7 @@ const AutoMode = {
     if (this.interval) { clearInterval(this.interval); this.interval = null; }
     this.cancelTransition();
     this._clearBlinks();
+    // Por si stop() se llama directamente (fin de lista) y no vía Library.
     const btn = $('#btn-auto');
     if (btn) btn.classList.remove('active');
     if (window.setXf) window.setXf(0);
@@ -70,7 +80,7 @@ const AutoMode = {
       this.suppressedFor = sal && sal.track ? sal.track.id : null;
       this.pendingTransition = null;
       this._clearBlinks();
-      window.setStatus && window.setStatus('Crossfade cancelado — mueve el fader para reanudar');
+      window.setStatus && window.setStatus('Crossfade cancelado — control manual del fader');
     }
   },
 
@@ -79,11 +89,17 @@ const AutoMode = {
   _clearBlinks() {
     this.blinks.forEach(id => clearInterval(id));
     this.blinks = [];
+    const list = this.decks || decks;
     for (const key of ['A', 'B']) {
-      const d = decks[key];
-      if (d && d._blinkInterval) {
+      const d = list && list[key];
+      if (!d) continue;
+      if (d._blinkInterval) {
         clearInterval(d._blinkInterval);
         d._blinkInterval = null;
+      }
+      if (d.elStatus) {
+        d.elStatus.style.color = '';
+        d.elStatus.style.textShadow = '';
       }
     }
   },
@@ -97,32 +113,62 @@ const AutoMode = {
 
     if (A && A.state === 'PLAYING' && A.track) { saliente = A; entrante = B; }
     else if (B && B.state === 'PLAYING' && B.track) { saliente = B; entrante = A; }
-    if (!saliente || !entrante) return;
+    if (!saliente || !entrante || !saliente.audio) return;
 
-    const dur = saliente.audio ? saliente.audio.duration : 0;
+    const dur = saliente.audio.duration;
     if (!Number.isFinite(dur) || dur <= 0) return;
     const remaining = dur - (saliente.audio.currentTime || 0);
+    const sid = saliente.track ? saliente.track.id : null;
 
-    // Precachea (≤20 s) la siguiente pista no reproducida en el deck libre
+    // Precachea (≤20 s) la siguiente pista no reproducida en el deck libre.
+    // Se calcula una sola vez: con SHUFFLE, nextUnplayed() es aleatorio.
     if (remaining <= 20 && entrante.state !== 'PLAYING' &&
-        entrante._autoPreloadedFor !== saliente.track.id) {
+        entrante._autoPreloadedFor !== sid) {
       const next = library && library.nextUnplayed
-        ? library.nextUnplayed(saliente.track.id)
-        : null;
+        ? library.nextUnplayed(sid) : null;
       if (next) {
         entrante.load(next);
-        entrante._autoPreloadedFor = saliente.track.id;
+        entrante._autoPreloadedFor = sid;
+        entrante._autoPreloadedTrack = next.id;
         if (library) library.select(next);
         window.setStatus && window.setStatus('AUTO: precargada «' + next.title + '» en Player ' + entrante.id.toUpperCase());
       }
     }
 
-    // Crossfade de 8 s
-    if (remaining <= this.crossfadeSec && entrante.track &&
-        entrante.state !== 'PLAYING' && !this.transitionTimer &&
-        this.suppressedFor !== saliente.track.id) {
+    if (remaining > this.crossfadeSec || this.transitionTimer ||
+        this.suppressedFor === sid) return;
+
+    // Sólo se hace crossfade a la pista que AUTO acaba de precargar para
+    // esta saliente. Así nunca se reactiva una pista ya reproducida que
+    // hubiera quedado abandonada en el otro deck.
+    const validEntrante = entrante.track &&
+      entrante._autoPreloadedFor === sid &&
+      entrante._autoPreloadedTrack === entrante.track.id &&
+      entrante.state !== 'PLAYING';
+
+    if (validEntrante) {
+      this.announcedEnd = false;
       this._startTransition(saliente, entrante);
+      return;
     }
+
+    if (!this.announcedEnd) {
+      const pending = library && library.tracks
+        ? library.tracks.filter(t => !t.played && t.id !== sid).length : 0;
+      if (pending === 0) this._announceEnd();
+    }
+  },
+
+  _announceEnd() {
+    this.announcedEnd = true;
+    // Apaga AUTO por completo (intervalo, transición y blinkers) y
+    // deja el botón y el modo de la biblioteca coherentes con el estado.
+    // El mensaje va DESPUÉS: setAuto(false) escribe su propio estado.
+    if (library && typeof library.setAuto === 'function') library.setAuto(false);
+    else this.stop();
+    const mv = $('#mini-viewer');
+    if (mv) mv.textContent = 'FIN DE LISTA';
+    window.setStatus && window.setStatus('FIN DE LISTA · no quedan pistas sin reproducir');
   },
 
   _startTransition(saliente, entrante) {
@@ -166,12 +212,7 @@ const AutoMode = {
     const pending = library && library.tracks
       ? library.tracks.filter(t => !t.played).length
       : 0;
-    if (pending === 0) {
-      const mv = $('#mini-viewer');
-      if (mv) mv.textContent = 'FIN DE LISTA';
-      window.setStatus && window.setStatus('FIN DE LISTA');
-      this.stop();
-    }
+    if (pending === 0) this._announceEnd();
   },
 
   _startBlink(deck, color) {
@@ -294,14 +335,19 @@ function drawMasterVU() {
   const g = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
+  let lv = 0; // nivel suavizado del máster
 
   function frame() {
     g.clearRect(0, 0, w, h);
     const m = window.masterGain ? window.masterGain.gain.value : 0.8;
-    const lv = Math.max(
-      decks.A ? decks.A.lv : 0,
-      decks.B ? decks.B.lv : 0
-    ) * m;
+    // lv de cada deck YA incluye su ganancia del crossfader (ver deck.js).
+    // La mezcla es la SUMA de canales, no el máximo: al mover el fader a A
+    // el canal B debe desaparecer del vúmetro central.
+    const a = decks.A ? decks.A.lv : 0;
+    const b = decks.B ? decks.B.lv : 0;
+    const target = Math.min(1, a + b) * m;
+    // Ataque rápido, caída suave: respuesta fluida sin saltos bruscos.
+    lv += (target - lv) * (target > lv ? 0.6 : 0.12);
     const bars = 12;
     const gap = 3;
     const bh = (h - gap * (bars + 1)) / bars;
@@ -329,13 +375,16 @@ function wireTopButtons() {
   const dlgCfg = $('#dlg-cfg');
   const dlgInfo = $('#dlg-info');
 
-  if (cfg && dlgCfg && dlgCfg.showModal) cfg.addEventListener('click', () => dlgCfg.showModal());
-  if (info && dlgInfo && dlgInfo.showModal) info.addEventListener('click', () => dlgInfo.showModal());
+  const openDlg = (d) => {
+    if (d && !d.open && typeof d.showModal === 'function') d.showModal();
+  };
+  if (cfg) cfg.addEventListener('click', () => openDlg(dlgCfg));
+  if (info) info.addEventListener('click', () => openDlg(dlgInfo));
 
   document.querySelectorAll('[data-close-dialog]').forEach(btn => {
     btn.addEventListener('click', () => {
       const d = btn.closest('dialog');
-      if (d && d.close) d.close();
+      if (d && d.open && typeof d.close === 'function') d.close();
     });
   });
 
@@ -349,22 +398,27 @@ function wireTopButtons() {
       if (cfgOut) cfgOut.textContent = String(AutoMode.crossfadeSec);
     });
   }
+  // setMaster() ya sincroniza #master y #cfg-master (audio.js).
   const cfgMaster = $('#cfg-master');
-  if (cfgMaster) {
-    cfgMaster.value = String(window.getMaster ? window.getMaster() : 0.8);
-    cfgMaster.addEventListener('input', () => window.setMaster(cfgMaster.value));
-  }
-  const syncMaster = $('#master');
-  if (syncMaster) syncMaster.addEventListener('input', () => {
-    if (cfgMaster) cfgMaster.value = syncMaster.value;
-  });
+  if (cfgMaster) cfgMaster.addEventListener('input', () => window.setMaster(cfgMaster.value));
 
   let lastMaster = window.getMaster ? window.getMaster() : 0.8;
+  const masterSlider = $('#master');
+  // Si el usuario mueve el master mientras está en STANDBY, ese nuevo valor
+  // es el que hay que restaurar al salir (no el de antes de entrar).
+  const onMasterTouched = () => {
+    if (!stby || !stby.classList.contains('active') || !masterSlider) return;
+    const v = Number(masterSlider.value);
+    if (Number.isFinite(v)) lastMaster = Math.max(0, Math.min(1, v));
+  };
+  if (masterSlider) masterSlider.addEventListener('input', onMasterTouched);
+  if (cfgMaster) cfgMaster.addEventListener('input', onMasterTouched);
+
   if (stby) stby.addEventListener('click', () => {
     const on = stby.classList.toggle('active');
     if (on) {
       lastMaster = window.getMaster ? window.getMaster() : 0.8;
-      window.setMaster(0, false);
+      window.setMaster(0, false); // no persistimos el silencio
       window.setStatus('STANDBY · master silenciado');
     } else {
       window.setMaster(lastMaster);
@@ -375,12 +429,27 @@ function wireTopButtons() {
   if (exit) exit.addEventListener('click', () => {
     if (dlgCfg && dlgCfg.open) dlgCfg.close();
     if (dlgInfo && dlgInfo.open) dlgInfo.close();
-    if (decks.A) decks.A.stop();
-    if (decks.B) decks.B.stop();
-    if (library) library.setAuto(false);
-    else AutoMode.stop();
+
+    // ORDEN: primero AUTO (intervalo, crossfade y blinkers), luego audio.
+    AutoMode.stop();
+    if (library && typeof library.setAuto === 'function') library.setAuto(false);
+    ['A', 'B'].forEach(key => {
+      const d = decks[key];
+      if (!d) return;
+      d.eject();                 // stop + quitar src + limpiar LEDs/vúmetro
+      if (d._blinkInterval) { clearInterval(d._blinkInterval); d._blinkInterval = null; }
+      if (d.elStatus) { d.elStatus.style.color = ''; d.elStatus.style.textShadow = ''; }
+    });
+
+    // Salir de STANDBY restaurando el volumen, sin dejar el botón encendido.
+    if (stby && stby.classList.contains('active')) {
+      stby.classList.remove('active');
+      window.setMaster(lastMaster);
+    }
     if (window.setXf) window.setXf(0);
-    window.setStatus('Sistema detenido');
+    const mv = $('#mini-viewer');
+    if (mv) mv.textContent = '';
+    window.setStatus('Sistema detenido · decks expulsados, AUTO apagado');
   });
 }
 

@@ -112,6 +112,8 @@ class Deck {
         this.eqHigh.type = 'highshelf';
         this.eqHigh.frequency.value = 3200;
         this.analyser.fftSize = 256;
+        // Reutilizar el búfer evita allocar 60 veces por segundo por deck.
+        this._vuBuf = new Uint8Array(this.analyser.frequencyBinCount);
 
         this.srcNode.connect(this.trimGain);
         this.trimGain.connect(this.eqLow);
@@ -439,6 +441,7 @@ class Deck {
     }
     this.track = null;
     this.cuePoint = 0;
+    this.lv = 0;
     this.showMessage('-- sin pista --');
     if (this.elMessage) this.elMessage.textContent = '-- sin pista --';
     this.leds.forEach(led => { led.style.background = 'var(--led-off)'; });
@@ -575,7 +578,7 @@ class Deck {
   _updateVu() {
     let level = 0;
     if (this.analyser && this.usingGraph) {
-      const buf = new Uint8Array(this.analyser.frequencyBinCount);
+      const buf = this._vuBuf;
       this.analyser.getByteTimeDomainData(buf);
       let peak = 0;
       for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
@@ -584,7 +587,14 @@ class Deck {
       // Vúmetro visual aunque no haya Web Audio
       level = 0.35 + 0.22 * Math.abs(Math.sin(performance.now() / 130 + (this.id === 'b' ? 1 : 0)));
     }
-    this.lv = Math.max(this.lv * 0.88, Math.min(1, level));
+
+    // El analizador está después de VOL/TRIM/EQ pero antes del crossfader.
+    // Aplicamos su ganancia para que el vúmetro del player baje al mover
+    // el crossfader con ratón o rueda, igual que el sonido que se escucha.
+    if (level > 0 && window.getXfGain) level *= window.getXfGain(this.id);
+
+    // Ataque rápido / caída suave: lectura fluida sin parpadeos.
+    this.lv = Math.max(this.lv * 0.86, Math.min(1, level));
 
     const n = this.vuSegments.length;
     for (let i = 0; i < n; i++) {

@@ -72,20 +72,59 @@ const Library = {
         if (row) self.togglePlayed(Number(row.dataset.id));
       });
       tbody.addEventListener('click', (e) => {
+        // Botonera flotante: se corta la propagación para que el clic en
+        // Play A / Play B no dispare la selección ni la carga de la fila.
+        const quick = e.target.closest('[data-quick-deck]');
+        if (quick) {
+          e.preventDefault();
+          e.stopPropagation();
+          const track = self._trackFromRow(quick.closest('tr'));
+          if (track) self.loadTo(track, quick.dataset.quickDeck);
+          self.hideContextMenu();
+          return;
+        }
         if (e.target.closest('.chk-played')) return;
         const row = e.target.closest('tr');
         if (!row) return;
-        const track = self.tracks.find(t => String(t.id) === row.dataset.id);
+        const track = self._trackFromRow(row);
         if (track) self.select(track);
       });
       tbody.addEventListener('dblclick', (e) => {
+        if (e.target.closest('[data-quick-deck]')) { e.stopPropagation(); return; }
         if (e.target.closest('.chk-played')) return;
         const row = e.target.closest('tr');
         if (!row) return;
-        const track = self.tracks.find(t => String(t.id) === row.dataset.id);
+        const track = self._trackFromRow(row);
         if (!track) return;
         self.select(track);
         self.loadTo(track, self._preferredDeck());
+      });
+      tbody.addEventListener('contextmenu', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+        const track = self._trackFromRow(row);
+        if (!track) return;
+        e.preventDefault();
+        e.stopPropagation();
+        self._ctxTrack = track;
+        self.select(track);
+        self.showContextMenu(e.clientX, e.clientY);
+      });
+      // El hover se refleja también con una clase para poder simularlo/probarlo
+      // y para no depender sólo de :hover (p. ej. dispositivos táctiles).
+      tbody.addEventListener('mouseover', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+        tbody.querySelectorAll('tr.row-hover').forEach(r => {
+          if (r !== row) r.classList.remove('row-hover');
+        });
+        row.classList.add('row-hover');
+      });
+      tbody.addEventListener('mouseout', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+        const next = e.relatedTarget;
+        if (!next || !row.contains(next)) row.classList.remove('row-hover');
       });
       tbody.addEventListener('dragstart', (e) => {
         const row = e.target.closest('tr');
@@ -155,6 +194,8 @@ const Library = {
         if (added.length) window.setStatus && window.setStatus('Pegadas ' + added.length + ' pista(s)');
       }
     });
+
+    this._bindContextMenu();
   },
 
   // ---------- Persistencia de marcas ----------
@@ -271,7 +312,13 @@ const Library = {
         '<td title="' + this._esc(t.artist) + '">' + this._esc(t.artist) + '</td>' +
         '<td title="' + this._esc(t.title) + '">' + this._esc(t.title) + '</td>' +
         '<td>' + this._esc(t.version) + '</td>' +
-        '<td>' + this._esc(t.comment) + '</td>' +
+        '<td class="comment-cell"><div class="comment-inner">' +
+          '<span class="comment-text" title="' + this._esc(t.comment) + '">' + this._esc(t.comment) + '</span>' +
+          '<span class="row-quick">' +
+            '<button type="button" class="quick-btn quick-a" data-quick-deck="A" title="Cargar en Player A">Play A</button>' +
+            '<button type="button" class="quick-btn quick-b" data-quick-deck="B" title="Cargar en Player B">Play B</button>' +
+          '</span>' +
+        '</div></td>' +
         '</tr>';
     });
 
@@ -279,6 +326,79 @@ const Library = {
     if (empty) empty.style.display = visible ? 'none' : 'grid';
     const count = $('#track-count');
     if (count) count.textContent = String(this.tracks.length);
+  },
+
+  // ---------- Menú contextual de asignación rápida ----------
+  _bindContextMenu() {
+    const self = this;
+    const menu = $('#track-ctx-menu');
+    if (!menu) return;
+    this._ctxMenu = menu;
+
+    menu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-ctx-deck]');
+      if (!item || !menu.contains(item)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const track = self._ctxTrack;
+      const deck = item.getAttribute('data-ctx-deck');
+      const autoplay = item.getAttribute('data-ctx-play') === '1';
+      self.hideContextMenu();
+      if (track) self.loadTo(track, deck, autoplay);
+    });
+
+    // Cierre automático: clic fuera (capture, así no se pierde ningún clic),
+    // Escape, scroll de la tabla, resize o pérdida de foco de la ventana.
+    document.addEventListener('click', (e) => {
+      if (!menu.classList.contains('open')) return;
+      if (e.target === menu || menu.contains(e.target)) return;
+      self.hideContextMenu();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.key === 'Esc') self.hideContextMenu();
+    });
+    const table = $('.lib-table');
+    if (table) table.addEventListener('scroll', () => self.hideContextMenu(), { passive: true });
+    window.addEventListener('resize', () => self.hideContextMenu());
+    window.addEventListener('blur', () => self.hideContextMenu());
+  },
+
+  showContextMenu(clientX, clientY) {
+    const menu = this._ctxMenu;
+    if (!menu) return;
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+
+    // Medimos ya visible para conocer su tamaño real; fallback para entornos
+    // sin layout (p. ej. DOM simulado) o antes de que se aplique la hoja de estilos.
+    const rect = typeof menu.getBoundingClientRect === 'function'
+      ? menu.getBoundingClientRect() : null;
+    const w = (rect && rect.width) || menu.offsetWidth || 226;
+    const h = (rect && rect.height) || menu.offsetHeight || 132;
+    const pad = 6;
+    const vw = window.innerWidth || 1024;
+    const vh = window.innerHeight || 768;
+    let left = Number(clientX) || 0;
+    let top = Number(clientY) || 0;
+    if (left + w > vw - pad) left = vw - w - pad;
+    if (top + h > vh - pad) top = vh - h - pad;
+    if (left < pad) left = pad;
+    if (top < pad) top = pad;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  },
+
+  hideContextMenu() {
+    const menu = this._ctxMenu;
+    if (!menu) return;
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    this._ctxTrack = null;
+  },
+
+  _trackFromRow(row) {
+    if (!row || !row.dataset) return null;
+    return this.tracks.find(t => String(t.id) === row.dataset.id) || null;
   },
 
   // ---------- Selección / carga ----------
@@ -296,14 +416,14 @@ const Library = {
     return A.state === 'PLAYING' ? 'B' : 'A';
   },
 
-  loadTo(track, deckId) {
+  loadTo(track, deckId, autoplay = false) {
     if (!track) return;
     const key = String(deckId || 'A').toUpperCase();
     const deck = window.decks && window.decks[key];
     if (!deck) return;
     this.select(track);
-    deck.load(track);
-    window.setStatus && window.setStatus(track.title + ' → Player ' + key);
+    deck.load(track, !!autoplay);
+    window.setStatus && window.setStatus(track.title + ' → Player ' + key + (autoplay ? ' · PLAY' : ''));
   },
 
   loadSelected(deckId) {

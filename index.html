@@ -215,7 +215,7 @@
         <div class="lib-header">
           <span class="lib-name">Default</span>
           <button type="button" class="lib-btn">edit recordcase</button>
-          <span class="lib-hint">Doble clic = cargar · Arrastra una fila a un player</span>
+          <span class="lib-hint">Doble clic = cargar · Clic derecho = menú · Hover = Play A/B · Arrastra a un player</span>
         </div>
 
         <div class="lib-table">
@@ -251,7 +251,7 @@
 
     <!-- ZONA E: ESTADO INFERIOR -->
     <footer class="status-bar">
-      <span>Pistas: <span id="track-count">0</span> · Doble clic = cargar · Arrastra una fila a un player</span>
+      <span>Pistas: <span id="track-count">0</span> · Doble clic = cargar · Clic derecho = menú · Hover = Play A/B</span>
       <span id="mini-viewer"></span>
       <span id="status-msg"></span>
     </footer>
@@ -273,8 +273,18 @@
     <h2>dj. hammer · Silver Edition</h2>
     <p>Mezclador de dos decks con crossfader de potencia constante, modo AUTO y biblioteca local.</p>
     <p>Atajos: arrastra MP3 a la app, Ctrl+V para pegar archivos, doble clic en una fila para cargarla.</p>
+    <p>Asignación rápida: clic derecho en una pista abre el menú para cargar o cargar y reproducir en A/B; al pasar el ratón aparecen los botones Play A / Play B.</p>
     <button type="button" data-close-dialog>Cerrar</button>
   </dialog>
+
+  <!-- Menú contextual de asignación rápida (se posiciona junto al cursor desde JS) -->
+  <div class="track-context-menu" id="track-ctx-menu" role="menu" aria-label="Asignar pista a player" aria-hidden="true">
+    <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="0">Cargar en Play A</button>
+    <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="0">Cargar en Play B</button>
+    <div class="ctx-divider" aria-hidden="true"></div>
+    <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="1">Play A (Cargar y reproducir)</button>
+    <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="1">Play B (Cargar y reproducir)</button>
+  </div>
 
   <script src="js/seg7.js" defer></script>
   <script src="js/controls.js" defer></script>
