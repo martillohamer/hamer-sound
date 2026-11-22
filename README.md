@@ -1,8 +1,8 @@
 # dj. hammer
 
-**Consola web de mezcla de dos decks** inspirada en el clásico **PCDJ Red** (el proyecto incluye `img/pcdj.png` como imagen de referencia) y en los flujos de mesa modernos de **Numark / Pioneer / Serato**. Se pincha completamente con el ratón, sobre un chasis metálico gris / plata / negro (paleta en `styles.css`, variables `--chassis`, `--plata`, `--aluminio`, `--lcd`).
+**Consola web de mezcla de dos decks** inspirada en el clásico **PCDJ Red** (el proyecto incluye `img/pcdj.png` como imagen de referencia) y en los flujos de mesa modernos de **Numark / Pioneer / Serato**. Se pincha completamente con el ratón, sobre un chasis metálico gris / plata / negro (paleta en `styles.css`, variables `--chassis`, `--plata`, `--aluminio`, `--lcd`) con cinco pieles seleccionables, incluida una exclusiva **Barça**.
 
-> Documentación válida para la etiqueta **`Silver-DjHammer`** (`39ac181`). Hermana técnica: [HANDOFF.md](HANDOFF.md).
+> Documentación válida para la etiqueta **`Gold-DjHammer`** (`5233f67`). Hermana técnica: [HANDOFF.md](HANDOFF.md).
 
 ---
 
@@ -19,7 +19,7 @@ La aplicación es **estática**: no hay backend, ni build, ni dependencias exter
 
 ---
 
-## 2. Características implementadas hasta `Silver-DjHammer`
+## 2. Características implementadas hasta `Gold-DjHammer`
 
 ### 2.1 Decks simétricos A y B
 
@@ -33,6 +33,9 @@ Cada player (`#player-a`, `#player-b`) expone la misma interfaz:
 | Ficha detallada | `.deck-detail` | Título, artista, carpeta, duración, restante, BPM, pitch y estado en vivo |
 | Transporte | `[data-cue]`, `[data-play]`, `[data-expel]`, `[data-track-prev]`, `[data-track-eq]`, `[data-track-rew]`, `[data-track-ff]` | CUE, PLAY/PAUSA, expulsar, pista anterior/anterior, ciclo de EQ, `«` / `»` |
 | Pitch | `#player-a-pitch-fader` (`-24` a `+24`, paso `0.5`), `#player-a-pitch`, `[data-pitch-minus]`, `[data-pitch-plus]`, `[data-pitch-default]` | Ajusta `playbackRate = 1 + pitch/100`; `◆` vuelve a `0.0%` |
+| TRIM | `#player-a-trim` (`±12 dB`), `#player-a-trim-val`, `#player-a-trim-reset` | Ganancia de entrada guardada por pista; `0 dB` la reinicia |
+| EQ 3 bandas | `#player-a-low`, `#player-a-mid`, `#player-a-high` (`±12 dB`), `#player-a-eq-reset` | `lowshelf` 200 Hz + `peaking` 1000 Hz + `highshelf` 3200 Hz |
+| Jog | `#player-a-jog`, `#player-a-jog-readout`, `#player-a-jog-reset` | Anillo de posición y aguja giratoria: arrastre circular/horizontal, rueda, doble clic = inicio |
 | Vúmetro | `.player-vu` (12 segmentos) | Analizador Web Audio × ganancia del crossfader |
 | LEDs | `.led-strip` (12 LEDs) | Cuenta atrás: 1 LED cada 3 s restantes |
 
@@ -41,7 +44,9 @@ Extras de ratón:
 - Clic en una LCD **vacía** abre el selector de archivos de ese deck.
 - Arrastre del `.lcd-timer` = *seek*; rueda sobre el bloque PITCH = ±`0.5`.
 - `«` / `»`: clic = ±10 s; mantener pulsado acelera hasta 120 s.
-- `=`: cicla los presets `FLAT → BASS → TREBLE → VOCAL` (filtros *lowshelf* 200 Hz y *highshelf* 3200 Hz).
+- `=`: cicla los presets `FLAT → BASS → TREBLE → VOCAL` (filtros *lowshelf* 200 Hz, *peaking* 1000 Hz y *highshelf* 3200 Hz).
+- Faders de TRIM/EQ: arrastre o rueda; doble clic los pone a `0 dB`; los botones `0 dB` / `EQ 0` reinician al instante.
+- Jog: arrastra el **borde** del círculo para girar (una vuelta ≈ 8 s de audio) o el **centro** para buscar en horizontal; la rueda busca ±0.5 s y el doble clic vuelve al inicio. Sólo mueve `currentTime`: no altera pitch, crossfader, AUTO ni vúmetros.
 - `[data-track-prev]` carga la pista anterior/siguiente dentro de la carpeta activa.
 
 El botón PLAY cambia entre `▶` y `❚❚`, CUE se ilumina en el punto de cue y EJECT se deshabilita sin pista cargada.
@@ -52,14 +57,14 @@ Banco `.fx-rack`, un canal por deck (`data-fx-deck="A"` / `"B"`):
 
 | Efecto | Controles | Implementación |
 |---|---|---|
-| `FILTER` | `[data-filter="off|lp|hp"]`, `[data-cutoff]` (`0-100`, valor `100` = 12.0k), `[data-cutoff-val]` | `BiquadFilter`; `OFF` usa `allpass`, `LP` usa `lowpass`, `HP` usa `highpass`. Corte mapeado `120 × 100^(v/100)` Hz → 120 Hz…12 kHz |
+| `FILTER` | `[data-filter="off|lp|hp"]`, `[data-cutoff]` (`0-100`, valor `100` = 12.0k), `[data-cutoff-val]`, mando `#fx-a-cutoff-knob` / `#fx-b-cutoff-knob` | `BiquadFilter`; `OFF` usa `allpass`, `LP` usa `lowpass`, `HP` usa `highpass`. Corte mapeado `120 × 100^(v/100)` Hz → 120 Hz…12 kHz. El dial (`window.Dial`) mueve el mismo corte con arrastre/rueda; doble clic = 12 kHz |
 | `ECHO` | `[data-echo]` (`OFF`/`ON`), `[data-echo-mix]` (`0-1`, paso `.01`, defecto `.35`), `[data-echo-val]` | `DelayNode` de 0.28 s + realimentación limitada a `0.45` send paralelo hacia el canal |
 | `PLATO` | `[data-brake]`, `[data-start]` | Rampa de `playbackRate` por `requestAnimationFrame` (1.4 s al frenar, 0.9 s al arrancar, mínimo `0.1`) |
 
 Cadena de audio de cada deck:
 
 ```text
-<audio> → MediaElementSource → trimGain → eqLow → eqHigh
+<audio> → MediaElementSource → inputGain (TRIM dB) → trimGain (lineal) → eqLow → eqMid → eqHigh
         → fxFilter → fxDry ─────────────────────→ chGain → analyser → xfade[A|B].gain → master → destination
                     └→ fxDelay ⇄ fxFeedback → fxWet ─┘
 ```
@@ -111,13 +116,24 @@ Curva de potencia constante: `A = cos(((v+1)/2)·π/2)`, `B = sin(((v+1)/2)·π/
 
 `cfg`, `i` (información), `stby` (silencia master sin persistir el silencio) y `exit` (para AUTO, expulsa decks, restaura volumen y centra el crossfader).
 
+### 2.8 Skins y preparación MIDI
+
+| Elemento | Qué hace |
+|---|---|
+| `#skin-select` (`SKIN`) | Cinco pieles: **Plata/Metálica**, **Azul**, **Rojo**, **Negro oscuro** y **Barça** (azulgrana con granate/dorado). Se guarda en `hammer:skin` y se aplica como `[data-skin]` en `<html>`. Sólo cambia variables CSS: audio y vúmetros intactos |
+| `#midi-status` | `MIDI: desconectado` / `listo` / `conectado`. Web MIDI es opcional: sin soporte o sin permiso no se lanza ningún error |
+| `#midi-input` | Selector del dispositivo detectado (o `Ninguno`) |
+| `cfg → Mapeo Numark NV II` | Tabla `#midi-map-rows` con control, deck, tipo (CC/nota), canal, número y acción. Los números son **provisionales**: confirma cada uno con un monitor MIDI al conectar la NV II |
+
+`window.Midi.onControl` es el punto de enganche: `main.js → wireMidi()` ya traduce la plantilla a PLAY/CUE, pitch, TRIM, EQ, corte de filtro, jog relativo, crossfader y BRAKE/START. Estos dos últimos quedan bloqueados con `AUTO` activo, igual que los botones del rack FX.
+
 ---
 
 ## 3. Requisitos y entorno
 
 | Requisito | Detalle |
 |---|---|
-| Navegador | Moderno, con **Web Audio API** (`AudioContext`, `BiquadFilter`, `DelayNode`, `AnalyserNode`) y soporte de `dialog` / `pointer events`. Chrome, Edge o Firefox recientes |
+| Navegador | Moderno, con **Web Audio API** (`AudioContext`, `BiquadFilter`, `DelayNode`, `AnalyserNode`) y soporte de `dialog` / `pointer events`. Chrome, Edge o Firefox recientes. **Web MIDI es opcional** y puede requerir permiso/HTTPS |
 | Servidor local | `http://localhost:8080` (no abrir con `file://`: los `blob:` y la persistencia se comportan peor) |
 | Python | `python3 -m http.server 8080` (Linux/WSL) o `py -m http.server 8080` (Windows) |
 | Alternativa | `npx serve -l 8080` o Live Server de VS Code configurado en el puerto 8080 |
@@ -134,20 +150,22 @@ Curva de potencia constante: `A = cos(((v+1)/2)·π/2)`, `B = sin(((v+1)/2)·π/
 hamer-sound/
 ├── README.md            ← este documento
 ├── HANDOFF.md            ← guía de relevo técnico
-├── index.html            ← chasis, zonas A-E, diálogos y orden de scripts
-├── styles.css            ← tema metálico, rejillas y estados visuales
+├── index.html            ← chasis, zonas A-E, diálogos, jog/dials y orden de scripts
+├── styles.css            ← tema metálico, skins, rejillas y estados visuales
 ├── img/
 │   └── pcdj.png          ← imagen de referencia (no enlazada por la UI)
 └── js/
     ├── seg7.js           ← window.renderSeg7 (utilidad SVG, sin usar en la UI actual)
-    ├── controls.js       ← window.Fader (clase de fader dibujado, sin instancias hoy)
+    ├── controls.js       ← window.Fader (sin instancias) y window.Dial (diales de filtro)
     ├── audio.js          ← AudioContext, master, crossfader, getXfGain, persistencia de master
-    ├── deck.js           ← class Deck: estado, grafo de audio, FX, CUE, pitch, VU
+    ├── deck.js           ← class Deck: estado, grafo, EQ, FX, CUE, pitch, jog, VU
     ├── library.js        ← window.Library: archivos, recordcases, filtro, marcas, menú
-    └── main.js           ← arranque, mixer, FX rack, AUTO, sesión, VU máster, botones
+    ├── skins.js          ← window.Skins: pieles persistentes en hammer:skin
+    ├── midi.js           ← window.Midi: Web MIDI seguro y mapeo NV II
+    └── main.js           ← arranque, mixer, FX rack, MIDI, AUTO, sesión, VU, botones
 ```
 
-Los scripts se cargan con `defer` en este orden (importante): `seg7.js → controls.js → audio.js → deck.js → library.js → main.js`. `audio.js` llama a `initAudio()` al cargar; `main.js` monta los decks y la biblioteca en `DOMContentLoaded`, aislando cada subsistema con un helper `safe(label, fn)`.
+Los scripts se cargan con `defer` en este orden (importante): `seg7.js → controls.js → audio.js → deck.js → library.js → skins.js → midi.js → main.js`. `audio.js` llama a `initAudio()` al cargar; `main.js` monta los decks y la biblioteca en `DOMContentLoaded`, aislando cada subsistema con un helper `safe(label, fn)`. `skins.js` y `midi.js` son idempotentes y también se inicializan desde ese `safe()`.
 
 ### Objetos globales expuestos
 
@@ -156,8 +174,11 @@ Los scripts se cargan con `defer` en este orden (importante): `seg7.js → contr
 | `window.ctx`, `window.masterGain` | `audio.js` | Grafo Web Audio |
 | `window.xfade`, `window.setXf`, `window.getXfGain` | `audio.js` | Crossfader y vúmetros |
 | `window.setMaster`, `window.getMaster` | `audio.js` | Master persistente |
-| `window.Deck` | `deck.js` | Constructor de decks |
+| `window.Deck` | `deck.js` | Constructor de decks (incluye el jog) |
 | `window.Library` | `library.js` | Biblioteca y carpetas |
+| `window.Dial` | `controls.js` | Mando giratorio reutilizable (arrastre, rueda, doble clic) |
+| `window.Skins` | `skins.js` | Pieles: `get()`, `set(id)`, `list` |
+| `window.Midi` | `midi.js` | Estado Web MIDI, `mapping` NV II y `onControl` |
 | `window.AutoMode`, `window.StateMachine` | `main.js` | Encadenado automático |
 | `window.Session` | `main.js` | Reloj, contador y disponibilidad de FX (depurable desde F12) |
 | `window.decks` | `main.js` | `{ A, B }` en tiempo de ejecución |
@@ -187,8 +208,12 @@ Abre <http://localhost:8080>. Tras cambiar código, recarga con **`Ctrl + Shift 
 | Filtrar por carpeta | Clic en un chip de `#folder-chips` (`Todas` vuelve a la vista completa) |
 | Mover pista a carpeta | Arrastrar la fila al chip, menú contextual o `#folder-assign` + `Mover` |
 | Seek | Arrastrar `.lcd-timer`, `«` / `»` (clic o mantenido) |
+| Seek con jog | Arrastrar el borde (circular) o el centro (horizontal) del círculo JOG; rueda = ±0.5 s; doble clic / `↺ 0` = inicio |
+| TRIM / EQ | Fader, rueda o doble clic (= `0 dB`); botones `0 dB` / `EQ 0` |
+| Corte de filtro | Slider `CUT` o dial junto a él; doble clic en el dial = 12 kHz |
+| Cambiar piel | Selector `SKIN` de la cabecera (se recuerda al recargar) |
 | Pitch | Fader vertical, botones `−`, `+`, `◆`, o rueda sobre el bloque |
-| Cancelar AUTO | Mover `#crossfader` durante una transición |
+| Cancelar AUTO | Mover `#crossfader` durante una transición (también por MIDI) |
 | Cerrar menú contextual | `Escape`, clic fuera, scroll de la tabla o pérdida de foco |
 
 ---
@@ -199,9 +224,10 @@ Abre <http://localhost:8080>. Tras cambiar código, recarga con **`Ctrl + Shift 
 |---|---|---|
 | `hammer:master` | Número `0-1` | `audio.js → setMaster(v)` (STANDBY usa `store=false`) |
 | `hammer:played:v1` | `{ "nombre|tamaño|fecha": true/false }` | `library.js → _writeMap()` |
-| `hammer:library:v1` | `{ folders, activeFolder, tracks:[{ id, key, name, title, artist, size, lastModified, version, comment, bpm, folder, played }] }` | `library.js → _writeStore()` |
+| `hammer:library:v1` | `{ folders, activeFolder, tracks:[{ id, key, name, title, artist, size, lastModified, version, comment, bpm, folder, played, trimDb }] }` | `library.js → _writeStore()` |
+| `hammer:skin` | `silver` / `blue` / `red` / `dark` / `barca` | `skins.js → set(id)` (lista blanca) |
 
-`url` y `missing` **no** se persisten: la URL `blob:` se regenera al volver a añadir el archivo.
+`url` y `missing` **no** se persisten: la URL `blob:` se regenera al volver a añadir el archivo. `midi.js` no escribe nada en `localStorage`.
 
 ---
 
@@ -209,9 +235,10 @@ Abre <http://localhost:8080>. Tras cambiar código, recarga con **`Ctrl + Shift 
 
 ```bash
 for f in js/*.js; do node --check "$f" || exit 1; done
+git diff --check
 ```
 
-En el navegador (`F12`): consola sin errores, `Application → Local Storage` sin cadenas `blob:`, hora y `SESIÓN` avanzando, `PINCHADOS` subiendo al dar PLAY, FX respondiendo y crossfader y vúmetro intactos con `AUTO`.
+En el navegador (`F12`): consola sin errores, `Application → Local Storage` sin cadenas `blob:`, hora y `SESIÓN` avanzando, `PINCHADOS` subiendo al dar PLAY, FX respondiendo y crossfader y vúmetro intactos con `AUTO`. Comprueba además que las cinco skins se aplican y persisten, que el jog y los diales responden al ratón, y que el estado MIDI no lanza errores sin controlador. Detalle completo en [HANDOFF.md](HANDOFF.md), sección 4.
 
 ---
 
@@ -219,4 +246,5 @@ En el navegador (`F12`): consola sin errores, `Application → Local Storage` si
 
 - [Repositorio remoto](https://github.com/martillohamer/hamer-sound.git)
 - [HANDOFF.md — relevo técnico](HANDOFF.md)
-- [index.html](index.html) · [styles.css](styles.css) · [js/main.js](js/main.js)
+- [index.html](index.html) · [styles.css](styles.css)
+- [js/skins.js](js/skins.js) · [js/midi.js](js/midi.js) · [js/main.js](js/main.js)
