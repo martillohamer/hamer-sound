@@ -120,12 +120,29 @@ function getXfGain(id) {
 
 function setMaster(v, store = true) {
   v = clamp(Number(v) || 0, 0, 1);
+  // Único nodo de salida: no se crea ningún gain nuevo para MAIN. Analizador
+  // (pre-crossfader), crossfader cos/sen y TRIM quedan exactamente igual.
   if (master) master.gain.value = v;
-  // Un único punto de sincronía: el fader del mixer y el del diálogo cfg
-  // deben reflejar siempre el mismo valor (también al entrar en STANDBY).
-  [$('#master'), $('#cfg-master')].forEach(el => {
+  // Un único punto de sincronía: el fader del mixer, el del diálogo cfg y el
+  // fader MAIN reflejan siempre el mismo valor (también en STANDBY/EXIT).
+  [$('#master'), $('#cfg-master'), $('#main-level')].forEach(el => {
     if (el && String(el.value) !== String(v)) el.value = String(v);
   });
+  // Indicador del bloque MAIN: lectura numérica, LEDS y dial espejo (silencioso
+  // para no reentrar en onChange → setMaster).
+  const out = $('#main-out');
+  if (out) out.textContent = Math.round(v * 100) + '%';
+  const leds = document.querySelectorAll('.main-leds span');
+  const lit = Math.round(v * leds.length);
+  leds.forEach((led, i) => {
+    led.style.background = i < lit
+      ? (i >= leds.length - 1 ? 'var(--led-rojo)'
+        : i >= leds.length - 3 ? '#ec3' : 'var(--led-verde)')
+      : 'var(--vu-off)';
+  });
+  if (window.mainDial && typeof window.mainDial.setValue === 'function') {
+    window.mainDial.setValue(v * 100, true);
+  }
   if (store) {
     try { localStorage.setItem('hammer:master', String(v)); } catch (_) { /* ignore */ }
   }

@@ -202,8 +202,8 @@ Abre <http://localhost:8080>. Tras cambiar código, recarga con **`Ctrl + Shift 
 | Acción | Gestor |
 |---|---|
 | Añadir pistas | `#btn-add`, arrastrar archivos a la app o `Ctrl+V` |
-| Cargar y reproducir | Doble clic en fila, botones hover `Play A`/`Play B`, clic derecho → *Play A/B (Cargar y reproducir)* |
-| Cargar sin reproducir | `#btn-load-a` (`→ A`), `#btn-load-b` (`→ B`), clic derecho → *Cargar en Play A/B*, arrastrar fila a un player |
+| Cargar y reproducir | Doble clic en fila, botones hover `Play A`/`Play B`, `#btn-load-a` (`→ A`), `#btn-load-b` (`→ B`), `▶→ A/B`, clic derecho → cualquier opción de deck, arrastrar la fila a un player |
+| Enlazar MP3 de una pista restaurada | Arrastrar el archivo al deck o a la app, volver a añadirlo, o clic derecho → *Enlazar MP3…* (aparece sólo en pistas `⚠`) |
 | Crear carpeta | `#btn-folder-new` o `#btn-folder-edit` → diálogo → `#rc-new-name` + `#rc-add` |
 | Filtrar por carpeta | Clic en un chip de `#folder-chips` (`Todas` vuelve a la vista completa) |
 | Mover pista a carpeta | Arrastrar la fila al chip, menú contextual o `#folder-assign` + `Mover` |
@@ -236,7 +236,10 @@ Abre <http://localhost:8080>. Tras cambiar código, recarga con **`Ctrl + Shift 
 ```bash
 for f in js/*.js; do node --check "$f" || exit 1; done
 git diff --check
+node --test tests/logic.test.cjs    # 18 contratos: audio, carga A/B, drops, persistencia y reintento de play()
 ```
+
+Los tests son JavaScript puro (`node:test`) con un DOM simulado: no requieren dependencias ni navegador. Fijan la curva cos/sen del crossfader, la cancelación de AUTO, la ausencia de `blob:` en `localStorage`, el enrutado A/B, el tratamiento de pistas sin archivo, el mensaje de formato no compatible, el re-enlace, la supresión de clic por deck y la cancelación del reintento de `play()` ante cargas más recientes.
 
 En el navegador (`F12`): consola sin errores, `Application → Local Storage` sin cadenas `blob:`, hora y `SESIÓN` avanzando, `PINCHADOS` subiendo al dar PLAY, FX respondiendo y crossfader y vúmetro intactos con `AUTO`. Comprueba además que las cinco skins se aplican y persisten, que el jog y los diales responden al ratón, y que el estado MIDI no lanza errores sin controlador. Detalle completo en [HANDOFF.md](HANDOFF.md), sección 4.
 

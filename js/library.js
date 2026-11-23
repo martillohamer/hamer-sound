@@ -170,7 +170,11 @@ const Library = {
         const row = e.target.closest('tr');
         if (!row) return;
         const track = self._trackFromRow(row);
-        if (track) self.select(track);
+        // Selección ligera: NO repintar la tabla en un clic normal. select()
+        // → render() sustituye tbody.innerHTML y destruye el <tr> entre los dos
+        // clics de un doble clic, por lo que el navegador reinicia el contador
+        // y nunca dispara 'dblclick' (la vía principal de carga de la app).
+        if (track) self.select(track, false);
       });
       tbody.addEventListener('dblclick', (e) => {
         if (e.target.closest('[data-quick-deck]')) { e.stopPropagation(); return; }
@@ -202,6 +206,7 @@ const Library = {
           if (r !== row) r.classList.remove('row-hover');
         });
         row.classList.add('row-hover');
+        self._lastHoverTrack = self._trackFromRow(row);
       });
       tbody.addEventListener('mouseout', (e) => {
         const row = e.target.closest('tr');
@@ -346,7 +351,13 @@ const Library = {
       if (!id) return;
       e.preventDefault();
       e.stopPropagation();
-      self.dropTo(id, deckId, true);
+      // Marcamos el evento: si algún navegador sigue entregándolo al panel,
+      // el handler del deck no repetirá la carga (evita doble play/AbortError).
+      e.__hammerDropHandled = true;
+      // Y marcamos el instante del soltar: algunos navegadores emiten después
+      // un 'click' sintético sobre el panel que abriría el selector de la LCD.
+      self.markDrop(deckId);
+      self.dropTo(id, deckId, true, e);
     }, true);
 
     // El arrastre de una fila puede llevar el puntero fuera de la vista:
@@ -580,10 +591,17 @@ const Library = {
   },
 
   add(files) {
-    const list = Array.from(files || []).filter(f =>
-      (f.type && f.type.startsWith('audio/')) ||
-      /\.(mp3|wav|ogg|oga|flac|m4a|aac|opus)$/i.test(f.name || '')
-    );
+    const all = Array.from(files || []);
+    const isAudio = (f) => (f.type && f.type.startsWith('audio/')) ||
+      /\.(mp3|wav|ogg|oga|flac|m4a|aac|opus)$/i.test(f.name || '');
+    const list = all.filter(isAudio);
+    // Un archivo no compatible es un error visible, no un «ya añadido»: el
+    // usuario necesita saber que ese .txt/.zip nunca entró en la biblioteca.
+    if (!list.length && all.length) {
+      window.setStatus && window.setStatus(
+        '⚠ Formato no compatible · usa MP3, WAV, OGG, FLAC, M4A, AAC u OPUS');
+      return [];
+    }
     const map = this._readMap();
     const added = [];
     let relinked = 0;
@@ -643,6 +661,69 @@ const Library = {
       window.setStatus && window.setStatus('Ese archivo ya está en la biblioteca');
     }
     return added;
+  },
+
+  // Enlaza un MP3 del disco con una pista concreta (típicamente una restaurada
+  // de localStorage, que tiene url:null / missing:true). Sólo se sustituye la
+  // URL blob: de esta sesión: la identidad name|size|lastModified, el key de
+  // hammer:played:v1 y el resto de metadatos quedan intactos, así que no se
+  // escribe nunca ninguna cadena blob: en localStorage.
+  relink(track, file) {
+    if (!track || !file) return false;
+    if (track.url && String(track.url).indexOf('blob:') === 0) {
+      const inUse = ['A', 'B'].some(k => {
+        const d = window.decks && window.decks[k];
+        return d && d.audio && d.audio.src === track.url;
+      });
+      if (!inUse) { try { URL.revokeObjectURL(track.url); } catch (_) { /* ignore */ } }
+    }
+    track.url = URL.createObjectURL(file);
+    track.missing = false;
+    this._writeStore(); // metadatos; track.url NO se serializa
+    this.render();
+    window.setStatus && window.setStatus('«' + (track.title || track.name) +
+      '» enlazada · ya se puede reproducir');
+    return true;
+  },
+
+  // Ofrecer el enlace de una pista sin archivo en esta sesión. Sólo lo invoca
+  // el menú derecho (comportamiento que ya funcionaba): el arrastre nunca abre
+  // el selector del sistema, sólo avisa con claridad.
+  _offerRelink(track, deckId, autoplay = true) {
+    if (!track) return false;
+    const key = deckId ? String(deckId).toUpperCase() : this._preferredDeck();
+    this._relinkTarget = track;
+    this._relinkDeck = key;
+    this._relinkAutoplay = !!autoplay;
+    const input = this._relinkInput;
+    if (input && typeof input.click === 'function') {
+      input.click(); // dentro del gesto del usuario (clic o drop)
+      return true;
+    }
+    return this.loadTo(track, key, !!autoplay);
+  },
+
+  // Resuelve la pista de un arrastre combinando TODAS las señales disponibles.
+  // En algunos navegadores el drop sobre un control interno del panel (LCD,
+  // faders, botones) no expone 'application/x-hammer-track' en dataTransfer,
+  // y en otros el 'text/plain' es ajeno (arrastre de texto desde fuera). La
+  // referencia viva capturada en dragstart es la fuente de verdad; el id del
+  // dataTransfer sólo se acepta si corresponde a una pista real.
+  _resolveDragTrack(e, idHint) {
+    const dt = e && e.dataTransfer;
+    const find = (v) => (v == null || v === '') ? null
+      : this.tracks.find(t => String(t.id) === String(v)) || null;
+    let track = find(idHint);
+    if (!track && dt) {
+      const get = (type) => {
+        try { return dt.getData(type) || ''; } catch (_) { return ''; }
+      };
+      track = find(get('application/x-hammer-track')) ||
+        find(get('text/plain'));
+    }
+    if (!track) track = find(this._dragId);
+    if (!track && this._dragTrack) track = find(this._dragTrack.id);
+    return track;
   },
 
   // Devuelve las pistas de la biblioteca correspondientes a estos archivos
@@ -961,7 +1042,43 @@ const Library = {
     if (!menu) return;
     this._ctxMenu = menu;
 
+    // Re-enlace directo de una pista restaurada sin archivo en esta sesión:
+    // se liga el MP3 elegido a ESA pista (no se crea otra) y se reproduce.
+    // Se expone como _relinkInput para que el arrastre a un panel pueda
+    // ofrecer el mismo enlace sin duplicar lógica (ni tocar el menú).
+    const relinkInput = $('#relink-file-input');
+    this._relinkInput = relinkInput;
+    if (relinkInput) {
+      relinkInput.addEventListener('change', () => {
+        const track = self._relinkTarget;
+        const deck = self._relinkDeck || self._preferredDeck();
+        const autoplay = self._relinkAutoplay !== false;
+        const file = relinkInput.files && relinkInput.files[0];
+        self._relinkTarget = null;
+        self._relinkDeck = null;
+        self._relinkAutoplay = true;
+        relinkInput.value = '';
+        if (!track || !file) return;
+        // Tras enlazar, carga y reproduce en el deck que pidió el usuario (o
+        // en el preferido si se enlazó desde la propia opción del menú).
+        if (self.relink(track, file)) self.loadTo(track, deck, autoplay);
+      });
+    }
+
     menu.addEventListener('click', (e) => {
+      const relinkItem = e.target.closest('[data-ctx-relink]');
+      if (relinkItem && menu.contains(relinkItem)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const track = self._ctxTrack || self.sel;
+        self.hideContextMenu();
+        if (track && relinkInput) {
+          self._relinkTarget = track;
+          self._relinkDeck = null;
+          relinkInput.click(); // gesto del usuario: permite abrir el selector
+        }
+        return;
+      }
       const cleanItem = e.target.closest('[data-ctx-clean]');
       if (cleanItem && menu.contains(cleanItem)) {
         e.preventDefault();
@@ -990,9 +1107,23 @@ const Library = {
       // la pista se resuelve igual aunque _ctxTrack ya se haya limpiado.
       const track = self._ctxTrack || self.sel;
       const deck = item.getAttribute('data-ctx-deck');
-      const autoplay = item.getAttribute('data-ctx-play') === '1';
+      // El menú derecho es asignación rápida: sus dos opciones de deck cargan
+      // y reproducen. Antes las «Cargar en Play…» tenían data-ctx-play="0"
+      // y dejaban el deck en READY en silencio, que era el «no suena» del
+      // menú contextual. data-ctx-play se conserva sólo para el estilo CSS.
+      const autoplay = true;
       self.hideContextMenu();
-      if (track) self.loadTo(track, deck, autoplay);
+      if (!track) {
+        window.setStatus && window.setStatus('⚠ Selecciona una pista antes de usar el menú');
+        return;
+      }
+      if (!track.url) {
+        // Pista de otra sesión: no hay blob: guardado. El comportamiento del
+        // menú no cambia: se ofrece el enlace y se reproduce al enlazar.
+        self._offerRelink(track, deck, autoplay);
+        return;
+      }
+      self.loadTo(track, deck, autoplay);
     });
 
     // Cierre automático: clic fuera (capture, así no se pierde ningún clic),
@@ -1040,6 +1171,8 @@ const Library = {
     const menu = this._ctxMenu;
     if (!menu) return;
     if (this._folderMenu) this.hideFolderContextMenu();
+    const relink = menu.querySelector('[data-ctx-relink]');
+    if (relink) relink.hidden = !(this._ctxTrack && this._ctxTrack.missing);
     this._renderCtxFolders();
     this._positionMenu(menu, clientX, clientY);
   },
@@ -1146,9 +1279,20 @@ const Library = {
   },
 
   // ---------- Selección / carga ----------
-  select(track) {
+  // repaint=false mantiene los <tr> actuales (sólo cambia la clase .sel): lo
+  // usa el clic sencillo de la tabla para no romper el contador de dblclick.
+  select(track, repaint = true) {
     this.sel = track || null;
-    this.render();
+    if (repaint) {
+      this.render();
+    } else {
+      const tbody = $('#library-rows');
+      if (tbody) {
+        tbody.querySelectorAll('tr').forEach(tr => {
+          tr.classList.toggle('sel', !!this.sel && tr.dataset.id === String(this.sel.id));
+        });
+      }
+    }
     return this.sel;
   },
 
@@ -1167,6 +1311,14 @@ const Library = {
     if (!track) return false;
     const key = String(deckId || 'A').toUpperCase();
     const deck = window.decks && window.decks[key];
+    // Sin deck de destino no cambiamos la selección: evitar seleccionar una
+    // pista por un id de deck inválido deja la UI coherente en ambos players.
+    if (!deck) return false;
+    // Reanudar ANTES de cualquier repintado: soltar una fila o pulsar el menú
+    // son gestos del usuario y la activación se consume en este mismo tick.
+    // select()→render() recrea la tabla, así que hacerlo después sigue siendo
+    // válido, pero hacerlo antes es más robusto en WebViews y Safari.
+    this._resumeCtxFor(deck);
     this.select(track);
     if (!track.url) {
       // Pista restaurada de localStorage: aviso claro en LCD, barra y consola.
@@ -1183,24 +1335,31 @@ const Library = {
       }
       return false;
     }
-    if (!deck) return false;
-    // Soltar/cargar es un gesto del usuario: reanudamos el AudioContext aquí,
-    // de forma síncrona, para que el play() posterior no se quede bloqueado.
+
+    // El AudioContext ya se reanudó al entrar (arriba), antes de select().
     // Deck.load()/play() vuelven a hacerlo por su cuenta: es idempotente.
-    if (deck && typeof deck._resumeCtx === 'function') deck._resumeCtx();
-    if (window.ctx && window.ctx.state === 'suspended' && typeof window.ctx.resume === 'function') {
-      try { window.ctx.resume(); } catch (_) { /* ignore */ }
-    }
     const name = track.title || track.name || 'pista';
-    const requested = deck.load(track, !!autoplay);
+    let requested = null;
+    try {
+      requested = deck.load(track, !!autoplay);
+    } catch (err) {
+      // Nunca dejamos una excepción suelta en un manejador de drop/contextmenu.
+      console.error('[hammer] Library.loadTo: fallo al cargar «' + name + '»', err);
+      window.setStatus && window.setStatus('⚠ No se pudo cargar «' + name + '» en Player ' + key);
+      return false;
+    }
     window.setStatus && window.setStatus(name + ' → Player ' + key + ' · cargando…');
 
-    // Antes se escribía «· PLAY» aquí mismo, aunque el archivo estuviera
-    // roto o el autoplay bloqueado. Ahora el estado final llega del resultado
-    // real de load()/play() (que también actualizan LCD y consola al fallar).
+    // El estado final llega del resultado real de load()/play(), no de un
+    // «· PLAY» escrito a ciegas. Además, si el navegador dejó el elemento
+    // pausado tras la carga, damos una última orden de play() (idempotente).
     if (requested && typeof requested.then === 'function') {
       requested.then((ok) => {
-        if (!ok) return; // load/play ya informaron del error
+        if (!ok) return; // load/play ya informaron del error en LCD y consola
+        if (autoplay && deck.audio && deck.audio.paused && deck.audio.src) {
+          const lastTry = deck.play();
+          if (lastTry && typeof lastTry.catch === 'function') lastTry.catch(() => {});
+        }
         const gain = window.getXfGain ? window.getXfGain(key) : 1;
         const masterLevel = window.masterGain ? window.masterGain.gain.value
           : (window.getMaster ? window.getMaster() : 1);
@@ -1219,33 +1378,112 @@ const Library = {
     return true;
   },
 
+  // Un drop puede ir seguido de un 'click' sintético sobre el panel. Marcamos
+  // ese soltar para que LA LCD QUE RECIBIÓ EL DROP ignore un solo clic (y sólo
+  // durante un instante). Antes la supresión era global: soltar en A podía
+  // tragarse un clic legítimo en la LCD vacía de B. Ahora es por deck.
+  markDrop(deckId) {
+    this._suppressLcdClickFor = deckId ? String(deckId).toUpperCase() : '*';
+    if (this._suppressClickTimer) clearTimeout(this._suppressClickTimer);
+    this._suppressClickTimer = setTimeout(() => {
+      this._suppressClickTimer = null;
+      this._suppressLcdClickFor = null;
+    }, 600);
+  },
+
+  // Consume (una sola vez) la supresión de clic para el deck indicado.
+  shouldIgnoreLcdClick(deckId) {
+    const owner = this._suppressLcdClickFor;
+    if (!owner) return false;
+    const match = owner === '*' || owner === String(deckId || '').toUpperCase();
+    if (match) {
+      this._suppressLcdClickFor = null;
+      if (this._suppressClickTimer) {
+        clearTimeout(this._suppressClickTimer);
+        this._suppressClickTimer = null;
+      }
+    }
+    return match;
+  },
+
+  // Reanudación centralizada del AudioContext para cualquier carga (drop,
+  // menú derecho, botones, doble clic). Se llama dentro del gesto del usuario.
+  _resumeCtxFor(deck) {
+    if (deck && typeof deck._resumeCtx === 'function') deck._resumeCtx();
+    if (window.ctx && window.ctx.state === 'suspended' && typeof window.ctx.resume === 'function') {
+      try { window.ctx.resume(); } catch (_) { /* ignore */ }
+    }
+  },
+
   // Punto de entrada único para un soltar desde una fila. Usa la referencia
   // guardada en dragstart (la tabla se repinta al cargar, pero ya terminó el
   // arrastre) y delega en loadTo(), que avisa si la pista está sin enlazar.
   // autoplay = true al soltar sobre un deck (o al usar «▶→ A/B»).
-  dropTo(id, deckId, autoplay = true) {
-    let track = null;
-    if (id && typeof id === 'object') {
-      // Llamada directa con el objeto pista (p. ej. desde la LCD).
-      track = id;
-    } else {
-      const key = String(id == null || id === '' ? (this._dragId || '') : id);
-      // _dragTrack es la referencia viva capturada en dragstart: sobrevive a
-      // cualquier repintado de la tabla. Si no está, buscamos por id.
-      track = (this._dragTrack && String(this._dragTrack.id) === key)
-        ? this._dragTrack
-        : this.tracks.find(t => String(t.id) === key) || null;
+  dropTo(id, deckId, autoplay = true, dropEvent = null) {
+    const keyDeck = String(deckId || 'A').toUpperCase();
+    // 'drop' no es un evento de activación en todos los navegadores: reanudar
+    // aquí, en el mismo gesto, evita que el primer play() quede suspendido.
+    this._resumeCtxFor(window.decks && window.decks[keyDeck]);
+
+    // Un único resolvedor para las dos rutas de soltado (captura en document y
+    // handler propio del panel). Así una pista resuelta por el dataTransfer y
+    // otra resuelta por la referencia de dragstart siguen exactamente el mismo
+    // camino: no hay pistas que «carguen» unas sí y otras no.
+    let track = (id && typeof id === 'object') ? id
+      : this._resolveDragTrack(dropEvent, id);
+
+    // Si llega un archivo del sistema junto al soltar, se usa para enlazar ESA
+    // pista (identidad name|size|lastModified intacta, nunca se persiste blob:)
+    // o, si no había pista, se añade a la biblioteca y se carga la primera.
+    const dt = dropEvent && dropEvent.dataTransfer;
+    const files = dt && dt.files ? Array.from(dt.files) : [];
+    if (files.length) {
+      let file = null;
+      if (track) {
+        const key = this._key(track);
+        file = files.find(f => [this._cleanName(f), f.size, f.lastModified].join('|') === key);
+      }
+      if (file) {
+        if (!track.url) this.relink(track, file);
+      } else if (!track) {
+        const added = this.add(files);
+        if (added.length) track = added[0];
+        else return false; // add() ya envió el aviso (formato no compatible o duplicado)
+      }
     }
+
     if (this._clearDrag) this._clearDrag();
-    return this.loadTo(track, deckId, !!autoplay);
+    if (!track) {
+      // Antes un id ilegible terminaba en loadTo(null) sin dejar rastro.
+      window.setStatus && window.setStatus(
+        '⚠ No se pudo identificar la pista soltada en Player ' + keyDeck);
+      return false;
+    }
+    if (!track.url) {
+      // Pista de otra sesión: aviso claro en LCD y barra, pero NUNCA abrir el
+      // selector de archivos: un drop no es un clic de «cargar archivo». El
+      // re-enlace se ofrece sólo desde el menú derecho (su comportamiento).
+      const deck = window.decks && window.decks[keyDeck];
+      if (deck && typeof deck.notifyMissing === 'function') deck.notifyMissing(track);
+      else window.setStatus && window.setStatus('⚠ «' + (track.title || track.name) +
+        '»: sin archivo en esta sesión · clic derecho → Enlazar MP3');
+      return false;
+    }
+    return this.loadTo(track, keyDeck, !!autoplay);
   },
 
   loadSelected(deckId, autoplay = true) {
-    if (!this.sel) {
+    // Carga por la barra inferior: usa la selección y, si no hay, la última
+    // fila señalada con el ratón. Así «→ A/B» y «▶→ A/B» funcionan con
+    // cualquier pista disponible sin exigir un clic previo en la fila.
+    const hover = this._lastHoverTrack && this.tracks.indexOf(this._lastHoverTrack) >= 0
+      ? this._lastHoverTrack : null;
+    const track = this.sel || hover;
+    if (!track) {
       window.setStatus && window.setStatus('Selecciona una pista primero');
       return false;
     }
-    return this.loadTo(this.sel, deckId, !!autoplay);
+    return this.loadTo(track, deckId, !!autoplay);
   },
 
   loadAdjacent(deckId, dir) {
@@ -1262,14 +1500,18 @@ const Library = {
   },
 
   nextUnplayed(excludeId) {
-    const pool = this._pool().filter(t => !t.played && t.id !== excludeId);
+    // AUTO sólo puede elegir pistas con archivo en ESTA sesión. Las
+    // restauradas de localStorage tienen url:null: son metadatos, no audio.
+    // Sin este filtro AUTO las precargaba, load() las rechazaba y el modo se
+    // quedaba esperando una transición que nunca podía ocurrir.
+    const source = this._pool().filter(t => !!t.url);
+    const pool = source.filter(t => !t.played && t.id !== excludeId);
     if (!pool.length) return null;
     let pick;
     if (this.shuffle) {
       pick = pool[Math.floor(Math.random() * pool.length)];
     } else {
-      const anchor = this._pool().findIndex(t => t.id === excludeId);
-      const source = this._pool();
+      const anchor = source.findIndex(t => t.id === excludeId);
       const start = anchor >= 0 ? anchor + 1 : 0;
       for (let i = 0; i < source.length; i++) {
         const t = source[(start + i) % source.length];

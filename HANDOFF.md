@@ -1,6 +1,26 @@
 # HANDOFF — dj. hammer
 
-Guía de relevo para continuar el desarrollo. Todo lo descrito corresponde al código tal como está en `main` tras la etiqueta **`Gold-DjHammer`**.
+Guía de relevo para continuar el desarrollo. La sección 0 describe la versión canónica actual; el resto del documento es el estado histórico tras la etiqueta **`Gold-DjHammer`**.
+
+---
+
+## 0. Versión canónica actual (`v1.1-barca-pcdj-stable` + auditoría)
+
+HEAD es `fded934` (tag `v1.1-barca-pcdj-stable`), posterior a `Gold-DjHammer`. La auditoría de 2026-11 confirmó que **no existen duplicados ni versiones antiguas interfiriendo**: un único `index.html`, un único `styles.css`, una `class Deck` instanciada dos veces (`main.js:322-328`) y los ocho módulos JS de la sección 2.2. `img/pcdj.png`, `window.Fader` y `window.renderSeg7` son utilidades sin cablear (invariante 10). Los tags son los únicos puntos de restauración; no hay carpetas `backup` ni copias `final2/nuevo/definitivo`.
+
+### 0.1 Ruta única de carga (contrato de la cabina)
+
+`Library.loadTo(track, deckId, autoplay)` es el **único núcleo de carga**. Convergen en él los cuatro mecanismos de la UI: botones de fila (`data-quick-deck`), doble clic, menú contextual (una opción por deck) y drag & drop (captura en `document` → `dropTo()` → `loadTo()`). `Deck.load()`/`Deck.play()` son sólo primitivas de audio. Reglas:
+
+- **Disponibilidad**: una pista con `url == null` (restaurada de `localStorage`) nunca se reproduce. `loadTo()`/`dropTo()` avisan en LCD + barra de estado, no abren el selector de archivos y dejan el deck intacto.
+- **Re-enlace explícito**: `Library.relink(track, file)` (menú derecho *Enlazar MP3…*, o soltar el MP3 sobre la pista) genera una nueva `URL.createObjectURL` sin tocar la clave `name|size|lastModified`. Sólo revoca la URL anterior si **ningún** deck la tiene en `audio.src`. Nunca se persiste `blob:`.
+- **Drop**: el manejador de captura de `library.js` resuelve la fila, marca `__hammerDropHandled` para evitar un segundo `play()`, y llama a `markDrop(deckId)`. El listener de LCD del deck llama a `Library.shouldIgnoreLcdClick(id)`, que consume esa supresión **sólo en el deck que recibió el drop**: el otro deck sigue pudiendo abrir su selector. Los archivos externos se añaden a la biblioteca (`addFiles`) y se cargan por la misma ruta; un formato no compatible avisa con `⚠ Formato no compatible…`.
+- **AUTO**: `nextUnplayed()` excluye pistas sin archivo, para que la cola no precargue metadatos restaurados.
+- **Reintento de `play()`**: `_retryPlayAfterAbort()` congela `_loadToken` y `src`. Si llega otra carga o un `eject()` mientras espera `canplay`, cancela el reintento: nunca suena una pista que el usuario no pidió.
+
+### 0.2 Pruebas automatizadas
+
+`tests/logic.test.cjs` contiene 18 contratos ejecutables con `node --test tests/logic.test.cjs`. Usa `node:test` y un DOM simulado en `vm`: **sin dependencias nuevas, sin jsdom y sin navegador**. Cubre curva cos/sen, `user:true` → AUTO cancelado, STANDBY sin persistir, store sin `blob:`, `_restore` sin archivo, enrutado A/B, pista sin archivo sin selector, formato no compatible, `relink`, cola AUTO, supresión por deck, `select(track,false)`, reintento con token, simetría de IDs y convergencia de mecanismos.
 
 ---
 

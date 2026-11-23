@@ -200,7 +200,9 @@ const AutoMode = {
         entrante._autoPreloadedFor !== sid) {
       const next = library && library.nextUnplayed
         ? library.nextUnplayed(sid) : null;
-      if (next) {
+      // Doble guardia: nextUnplayed() ya filtra las pistas sin archivo, pero
+      // AUTO nunca debe marcar como precargada una pista que no puede sonar.
+      if (next && next.url) {
         entrante.load(next);
         entrante._autoPreloadedFor = sid;
         entrante._autoPreloadedTrack = next.id;
@@ -386,16 +388,31 @@ function wireMixer() {
   const master = $('#master');
   const trimB = $('#vol-b2');
   const cf = $('#crossfader');
+  const mainLevel = $('#main-level');
+  const mainDialEl = $('#main-dial');
 
   wireWheel(volA, 0.02);
   wireWheel(volB, 0.02);
   wireWheel(master, 0.02);
   wireWheel(trimB, 0.02);
   wireWheel(cf, 0.05);
+  wireWheel(mainLevel, 0.02);
 
   if (volA) volA.addEventListener('input', () => decks.A && decks.A.setVolume(volA.value));
   if (volB) volB.addEventListener('input', () => decks.B && decks.B.setVolume(volB.value));
   if (master) master.addEventListener('input', () => window.setMaster(master.value));
+  // MAIN es un espejo del nodo maestro, no una ganancia adicional: comparte
+  // setMaster() con #master y #cfg-master, así STANDBY/EXIT siguen silenciando
+  // y restaurando el mismo valor sin tocar crossfader, TRIM ni el analizador.
+  if (mainLevel) mainLevel.addEventListener('input', () => window.setMaster(mainLevel.value));
+  if (window.Dial && mainDialEl) {
+    window.mainDial = new window.Dial({
+      el: mainDialEl,
+      min: 0, max: 100, step: 1, reset: 80,
+      start: Math.round((window.getMaster ? window.getMaster() : 0.8) * 100),
+      onChange: (v) => window.setMaster(v / 100)
+    });
+  }
   if (trimB) trimB.addEventListener('input', () => decks.B && decks.B.setTrim(trimB.value));
   if (cf) {
     cf.addEventListener('input', () => {

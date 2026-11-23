@@ -32,6 +32,21 @@
   --accent-3: #5d6770;
   --accent-ink: #10201a;
   --jog-track: #0b1013;
+
+  /* Acabado de consola profesional: guías de rack nítidas y bisel de
+     hardware real (Serato DJ / Numark / Atomix). Sólo afecta a superficie:
+     --led-*, --vu-off y el grafo Web Audio quedan intactos en todas las skins,
+     incluida Barça. */
+  --rail-hi: rgba(255, 255, 255, .16);
+  --rail-lo: rgba(0, 0, 0, .58);
+  --rail-edge: #050708;
+  /* Bisel de chasis en cuatro lados: se compone con la sombra propia de cada
+     panel mediante `box-shadow: var(--bevel), …`. */
+  --bevel:
+    inset 0 1px 0 var(--rail-hi),
+    inset 1px 0 0 rgba(255, 255, 255, .035),
+    inset -1px 0 0 rgba(0, 0, 0, .32),
+    inset 0 -2px 0 var(--rail-lo);
 }
 
 /* ---------- Skins de controladora ----------
@@ -106,7 +121,7 @@
   background:
     linear-gradient(90deg, rgba(156, 11, 63, .34) 0%, rgba(116, 80, 156, .26) 50%, rgba(11, 79, 158, .34) 100%),
     linear-gradient(180deg, var(--surface-1), var(--surface-2) 55%, var(--surface-3));
-  box-shadow: 0 20px 55px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .1);
+  box-shadow: var(--bevel), 0 20px 55px rgba(0, 0, 0, .74);
 }
 [data-skin="barca"] .top-bar,
 [data-skin="barca"] .fx-rack,
@@ -131,14 +146,14 @@
   --accent-ink: #2a0010; --jog-track: #1c0210;
   --fader-knob: linear-gradient(180deg, #fff0f5 0%, #ffb3cc 50%, #9c0b3f 100%);
   background: linear-gradient(165deg, #5d062b 0%, #3d041c 48%, #280211 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 77, 134, .2), inset 0 1px 0 rgba(255, 255, 255, .1), 0 4px 14px rgba(0, 0, 0, .5);
+  box-shadow: inset 0 0 0 1px rgba(255, 77, 134, .2), var(--bevel), 0 6px 16px rgba(0, 0, 0, .5);
 }
 [data-skin="barca"] #player-b {
   --accent: var(--bc-neon-blue); --accent-2: #0e6db4; --accent-3: var(--bc-neon-red);
   --accent-ink: #04182b; --jog-track: #04122c;
   --fader-knob: linear-gradient(180deg, #f2fbff 0%, #a7dcf5 50%, #16639f 100%);
   background: linear-gradient(165deg, #073a75 0%, #052750 48%, #041731 100%);
-  box-shadow: inset 0 0 0 1px rgba(55, 198, 245, .2), inset 0 1px 0 rgba(255, 255, 255, .1), 0 4px 14px rgba(0, 0, 0, .5);
+  box-shadow: inset 0 0 0 1px rgba(55, 198, 245, .2), var(--bevel), 0 6px 16px rgba(0, 0, 0, .5);
 }
 [data-skin="barca"] .player .deck-detail,
 [data-skin="barca"] .player .deck-eq,
@@ -179,20 +194,20 @@
 [data-skin="barca"] .lcd-msg { color: #6b0b33; }
 [data-skin="barca"] #player-b .lcd-msg { color: #0d3c66; }
 
-/* Transporte: neón refinado en hover/active, sin halos chillones. */
-[data-skin="barca"] .transport button {
+/* Transporte: neón refinado en hover/active, sin halos chillones.
+   Todas las reglas se califican con el ID del deck para que A y B tengan
+   EXACTAMENTE la misma especificidad: el base de #player-b (1-2-1) ganaba
+   antes a .btn-play/.btn-cue (0-3-0) y el play de B no se ponía verde. */
+[data-skin="barca"] #player-a .transport button {
   color: #fff0f6;
   border-color: rgba(255, 77, 134, .3);
   background: linear-gradient(180deg, #5e0a2e, #350318);
 }
-[data-skin="barca"] .transport button:hover {
+[data-skin="barca"] #player-a .transport button:hover {
   color: #fff;
   border-color: var(--bc-neon-red);
   background: linear-gradient(180deg, #8a1244, #520727);
   box-shadow: 0 0 10px rgba(255, 77, 134, .4), inset 0 1px 0 rgba(255, 255, 255, .18);
-}
-[data-skin="barca"] .transport button:active {
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .75);
 }
 [data-skin="barca"] #player-b .transport button {
   color: #eaf7ff;
@@ -200,23 +215,34 @@
   background: linear-gradient(180deg, #0c3563, #061c3b);
 }
 [data-skin="barca"] #player-b .transport button:hover {
+  color: #fff;
   border-color: var(--bc-neon-blue);
   background: linear-gradient(180deg, #13538a, #0a2b52);
   box-shadow: 0 0 10px rgba(55, 198, 245, .4), inset 0 1px 0 rgba(255, 255, 255, .18);
 }
-[data-skin="barca"] .transport .btn-play { color: var(--bc-neon-lime); }
-[data-skin="barca"] .transport .btn-play.active {
+[data-skin="barca"] #player-a .transport button:active,
+[data-skin="barca"] #player-b .transport button:active {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .75);
+}
+/* Botones semánticos: mismo color de estado en ambos decks. */
+[data-skin="barca"] #player-a .transport .btn-play,
+[data-skin="barca"] #player-b .transport .btn-play { color: var(--bc-neon-lime); }
+[data-skin="barca"] #player-a .transport .btn-play.active,
+[data-skin="barca"] #player-b .transport .btn-play.active {
   color: #12210a;
   background: linear-gradient(180deg, var(--bc-neon-lime), #69b43c);
   box-shadow: 0 0 12px rgba(159, 232, 90, .45);
 }
-[data-skin="barca"] .transport .btn-cue { color: var(--bc-neon-yellow); }
-[data-skin="barca"] .transport .btn-cue.active {
+[data-skin="barca"] #player-a .transport .btn-cue,
+[data-skin="barca"] #player-b .transport .btn-cue { color: var(--bc-neon-yellow); }
+[data-skin="barca"] #player-a .transport .btn-cue.active,
+[data-skin="barca"] #player-b .transport .btn-cue.active {
   color: #2a2104;
   background: linear-gradient(180deg, var(--bc-neon-yellow), #c9a436);
   box-shadow: 0 0 12px rgba(255, 215, 94, .45);
 }
-[data-skin="barca"] .transport .btn-eject {
+[data-skin="barca"] #player-a .transport .btn-eject,
+[data-skin="barca"] #player-b .transport .btn-eject {
   color: #fff;
   border-color: rgba(255, 255, 255, .25);
   background: linear-gradient(180deg, #a35a9a, #5c2d78);
@@ -347,10 +373,39 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   max-width: 1180px;
   margin: 0 auto;
   padding: 10px;
-  border: 1px solid #050708;
-  border-radius: 12px;
+  border: 1px solid var(--rail-edge);
+  border-radius: 10px;
   background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 55%, var(--surface-3) 100%);
-  box-shadow: 0 20px 55px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .09);
+  box-shadow: var(--bevel), 0 20px 55px rgba(0, 0, 0, .74);
+}
+
+/* ---------- Acabado de consola profesional ----------
+   Superficie limpia y sólida: bordes nítidos, guía de rack entre decks y un
+   bisel interior de hardware en cada panel. Todo se aplica sobre el propio
+   elemento (sin pseudoelementos decorativos en los paneles), así no se tapa
+   ningún control ni se capturan eventos de arrastre; la skin activa, Barça
+   incluida, sigue mandando en color. */
+.app, .top-bar, .player, .fx-rack, .mixer, .library, .status-bar,
+.crossfade-row, .main-block {
+  position: relative;
+}
+
+/* Guía vertical de bastidor entre los dos decks: separador limpio y continuo.
+   Se apaga al apilar la cabina en pantallas estrechas. */
+.players-row { position: relative; }
+@media (min-width: 821px) {
+  .players-row::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 50%;
+    width: 1px;
+    background: linear-gradient(180deg,
+      transparent 0%, var(--rail-hi) 12%, var(--rail-lo) 50%,
+      var(--rail-hi) 88%, transparent 100%);
+    pointer-events: none;
+  }
 }
 
 /* ---------- ZONA A: cabecera ---------- */
@@ -362,10 +417,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   gap: 14px;
   margin-bottom: 12px;
   padding: 10px 14px;
-  border: 1px solid #080a0c;
+  border: 1px solid var(--rail-edge);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--panel-hi), var(--panel));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .11), 0 2px 6px rgba(0, 0, 0, .5);
+  box-shadow: var(--bevel), 0 3px 8px rgba(0, 0, 0, .5);
 }
 
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -503,10 +558,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   gap: 10px;
   min-width: 0;
   padding: 12px;
-  border: 1px solid #080a0c;
+  border: 1px solid var(--rail-edge);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-2) 42%, var(--panel) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 4px 12px rgba(0, 0, 0, .45);
+  box-shadow: var(--bevel), 0 6px 16px rgba(0, 0, 0, .5);
 }
 
 .player-title {
@@ -896,13 +951,57 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 }
 .led { border-radius: 2px; background: var(--led-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .7); }
 
+/* ---------- Espejo de cabina: A a la izquierda, B a la derecha ----------
+   Ambos decks conservan EXACTAMENTE los mismos ids, etiquetas y controles:
+   sólo se invierte su disposición visual. En A el bloque PITCH queda en el
+   borde exterior izquierdo y en B en el exterior derecho; LCD y vúmetro son
+   simétricos respecto al centro de la consola. */
+#player-a {
+  grid-template-columns: 78px 26px minmax(0, 1fr);
+  grid-template-areas:
+    "title title title"
+    "pitch vu screen"
+    "detail detail detail"
+    "eq eq eq"
+    "jog jog jog"
+    "controls controls controls";
+}
+#player-b {
+  grid-template-columns: minmax(0, 1fr) 26px 78px;
+  grid-template-areas:
+    "title title title"
+    "screen vu pitch"
+    "detail detail detail"
+    "eq eq eq"
+    "jog jog jog"
+    "controls controls controls";
+}
+
+/* Bloques internos del player B en simetría especular, sin reordenar el DOM. */
+#player-b .player-title,
+#player-b .lcd-head,
+#player-b .lcd-values,
+#player-b .jog-block,
+#player-b .pitch-buttons { flex-direction: row-reverse; }
+#player-b .jog-info { align-items: flex-end; }
+#player-b .lcd-msg { text-align: right; }
+#player-b .lcd-progress { left: auto; right: 0; }
+/* 'direction: rtl' invierte el orden de las celdas del grid; se restaura en los
+   hijos para que textos, cifras y símbolos se lean de izquierda a derecha. */
+#player-b .deck-detail,
+#player-b .deck-eq,
+#player-b .transport { direction: rtl; }
+#player-b .deck-detail > *,
+#player-b .deck-eq > *,
+#player-b .transport > * { direction: ltr; }
+
 /* ---------- ZONA C: mezclador ---------- */
 .mixer {
   padding: 12px 16px 14px;
-  border: 1px solid #080a0c;
+  border: 1px solid var(--rail-edge);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-1), var(--surface-2));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 4px 12px rgba(0, 0, 0, .4);
+  box-shadow: var(--bevel), 0 5px 14px rgba(0, 0, 0, .45);
 }
 
 .section-label { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; color: var(--plata); font-size: 10px; font-weight: 700; letter-spacing: .18em; text-align: center; }
@@ -936,6 +1035,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   height: 110px;             /* mismo recorrido que .channel-fader */
   color: var(--gris-met);
   pointer-events: none;
+  /* Regla PCDJ: raíl longitudinal + muescas menores cada paso. Decorativo,
+     detrás de la numeración, sin interceptar el arrastre del <input>. */
+  background:
+    repeating-linear-gradient(180deg, rgba(214, 226, 232, .24) 0 1px, transparent 1px 11px) right center / 5px 100% no-repeat,
+    linear-gradient(180deg, rgba(214, 226, 232, .34), rgba(214, 226, 232, .34)) calc(100% - 7px) center / 1px calc(100% - 12px) no-repeat;
 }
 .scale-label {
   position: absolute;
@@ -966,10 +1070,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   color: var(--gris-met);
   font: 700 8px/1 "Courier New", monospace;
   text-align: right;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .9);
 }
-.scale-step i { flex: 0 0 7px; height: 1px; background: var(--gris-met); opacity: .7; }
+.scale-step i { flex: 0 0 8px; height: 1px; background: var(--gris-met); opacity: .8; }
 .scale-step.scale-major b { color: var(--plata); }
-.scale-step.scale-major i { flex-basis: 10px; height: 2px; background: var(--plata); opacity: .9; }
+.scale-step.scale-major i { flex-basis: 11px; height: 2px; background: var(--plata); opacity: .95; }
 .fader-row--right .scale-step { flex-direction: row-reverse; }
 .fader-row--right .scale-step b { text-align: left; }
 
@@ -987,6 +1092,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .chan-caption { color: var(--gris-met); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 
 .mix-vu { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* Escala dB grabada a los lados del vúmetro: 10 divisiones por lado sobre el
+   chasis del canvas (donde drawMasterVU no pinta barras). No tapa lecturas ni
+   recibe eventos; los colores de LED/vúmetro siguen intactos. */
+.vu-wrap { position: relative; display: block; }
+.vu-ruler {
+  position: absolute;
+  inset: 1px;
+  border-radius: 3px;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(180deg, rgba(214, 226, 232, .38) 0 1px, transparent 1px 10%),
+    repeating-linear-gradient(180deg, rgba(214, 226, 232, .38) 0 1px, transparent 1px 10%);
+  background-size: 5px 100%, 5px 100%;
+  background-position: left center, right center;
+  background-repeat: no-repeat;
+}
 #vu-meter {
   display: block;
   width: 90px;
@@ -1006,9 +1127,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   gap: 10px;
   margin-top: 14px;
   padding: 10px 12px;
-  border: 1px solid #101418;
+  border: 1px solid var(--rail-edge);
   border-radius: 6px;
   background: #171c20;
+  box-shadow: var(--bevel);
 }
 .xfade-end { color: var(--plata); font-weight: 700; }
 /* Ambos contadores comparten estilo: #cf-value (B) se conserva por compatibilidad. */
@@ -1038,10 +1160,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   background-image:
     linear-gradient(rgba(214, 226, 232, .9), rgba(214, 226, 232, .9)),
     linear-gradient(90deg, rgba(214, 226, 232, .42) 0 1px, transparent 1px),
+    repeating-linear-gradient(90deg, rgba(214, 226, 232, .22) 0 1px, transparent 1px 5%),
     linear-gradient(180deg, #0a0d0f, #22282c);
-  background-size: 2px 100%, 10% 100%, 100% 100%;
-  background-position: center center, left center, center center;
-  background-repeat: no-repeat, repeat-x, no-repeat;
+  background-size: 2px 100%, 10% 100%, 100% 3px, 100% 100%;
+  background-position: center center, left center, center bottom, center center;
+  background-repeat: no-repeat, repeat-x, repeat-x, no-repeat;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .9);
   cursor: ew-resize;
 }
@@ -1089,6 +1212,117 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
     var(--fader-knob);
 }
 
+/* ---------- MAIN: salida principal de la mesa ----------
+   Bloque de cabina con dial graduado, indicador LED/numérico y fader integrado.
+   Es sólo interfaz: los tres controles escriben en el MISMO gain maestro mediante
+   setMaster(). No hay nodos nuevos ni cambios en el analizador pre-crossfader. */
+.main-row { display: flex; justify-content: center; margin-top: 12px; }
+.main-block {
+  /* El recorrido de LEVEL aprovecha todo el ancho sobrante junto al dial y
+     al indicador, equilibrado a ambos lados y centrado como el crossfader. */
+  width: min(100%, 720px);
+  display: grid;
+  grid-template-columns: 56px auto minmax(0, 1fr);
+  grid-template-areas:
+    "dial meter slider"
+    "caption caption caption";
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 16px 8px;
+  border: 1px solid var(--rail-edge);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  box-shadow: var(--bevel), 0 2px 6px rgba(0, 0, 0, .45);
+}
+.main-caption {
+  grid-area: caption;
+  color: var(--plata);
+  font: 700 9px/1 "Courier New", monospace;
+  letter-spacing: .22em;
+  text-align: center;
+}
+.main-dial-wrap { grid-area: dial; position: relative; display: grid; place-items: center; width: 56px; height: 56px; }
+.main-dial { width: 40px; height: 40px; z-index: 1; }
+.main-dial .dial-pointer { background: var(--accent); }
+/* Marcas grabadas alrededor del dial: 21 muescas entre -135° y +135°. */
+.main-dial-ticks {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: repeating-conic-gradient(from -135deg, var(--gris-met) 0 1deg, transparent 1deg 13.5deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 23px, #000 24px 28px, transparent 29px);
+  mask: radial-gradient(circle, transparent 0 23px, #000 24px 28px, transparent 29px);
+  opacity: .8;
+}
+.main-meta { grid-area: meter; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.main-leds { display: flex; gap: 3px; padding: 3px 4px; border: 1px solid #07090b; border-radius: 3px; background: #0b1012; }
+.main-leds span {
+  width: 8px;
+  height: 11px;
+  border: 1px solid #050708;
+  border-radius: 2px;
+  background: var(--vu-off);
+  box-shadow: inset 0 0 3px rgba(0, 0, 0, .9);
+}
+.main-out {
+  min-width: 44px;
+  padding: 2px 5px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #0c1012;
+  color: #cfe4d6;
+  font: 700 12px/1.2 "Courier New", monospace;
+  text-align: center;
+}
+.main-slider {
+  grid-area: slider;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--gris-met);
+  font: 700 9px/1 "Courier New", monospace;
+  letter-spacing: .12em;
+}
+.main-slider input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 8px;
+  margin: 0;
+  border: 1px solid #07090b;
+  border-radius: 4px;
+  background-color: #101518;
+  background-image:
+    linear-gradient(rgba(214, 226, 232, .85), rgba(214, 226, 232, .85)),
+    repeating-linear-gradient(90deg, rgba(214, 226, 232, .3) 0 1px, transparent 1px 10%);
+  background-size: 2px 100%, 100% 4px;
+  background-position: center center, center bottom;
+  background-repeat: no-repeat, repeat-x;
+  cursor: ew-resize;
+}
+.main-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 20px;
+  margin-top: -7px;
+  border: 1px solid #4c565d;
+  border-radius: 3px;
+  background: var(--fader-knob);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .8);
+}
+.main-slider input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 20px;
+  border: 1px solid #4c565d;
+  border-radius: 3px;
+  background: var(--fader-knob);
+}
+[data-skin="barca"] .main-block { border-color: #0d0718; background: var(--bc-panel); }
+[data-skin="barca"] .main-dial .dial-pointer { background: var(--bc-blend); box-shadow: 0 0 5px var(--bc-blend); }
+
 .mixer-foot { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 12px; }
 .mini-control { display: flex; align-items: center; gap: 8px; color: var(--gris-met); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .mini-control input[type="range"] {
@@ -1098,7 +1332,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   height: 6px;
   border: 1px solid #07090b;
   border-radius: 3px;
-  background: #101518;
+  background-color: #101518;
+  /* Diez muescas bajo el recorrido, como en un fader de mesa. */
+  background-image: repeating-linear-gradient(90deg, rgba(214, 226, 232, .26) 0 1px, transparent 1px 10%);
+  background-size: 100% 3px;
+  background-position: center bottom;
+  background-repeat: no-repeat;
 }
 .mini-control input[type="range"]::-webkit-slider-thumb {
   appearance: none;
@@ -1122,10 +1361,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 /* ---------- ZONA D: biblioteca ---------- */
 .library {
   overflow: hidden;
-  border: 1px solid #080a0c;
+  border: 1px solid var(--rail-edge);
   border-radius: var(--radius);
   background: var(--grafito);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+  box-shadow: var(--bevel), 0 5px 14px rgba(0, 0, 0, .4);
 }
 
 .lib-header {
@@ -1342,9 +1581,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   flex-wrap: wrap;
   margin-top: 10px;
   padding: 6px 12px;
-  border: 1px solid #080a0c;
+  border: 1px solid var(--rail-edge);
   border-radius: 6px;
   background: #0e1214;
+  box-shadow: var(--bevel);
   color: #97a5ad;
   font: 11px/1.4 "Courier New", monospace;
 }
@@ -1443,10 +1683,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 /* ---------- ZONA C2: banco de efectos ---------- */
 .fx-rack {
   padding: 12px 16px 14px;
-  border: 1px solid #080a0c;
+  border: 1px solid var(--rail-edge);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--grafito), var(--surface-2));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 4px 12px rgba(0, 0, 0, .4);
+  box-shadow: var(--bevel), 0 5px 14px rgba(0, 0, 0, .45);
 }
 .fx-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .fx-channel {
@@ -1459,7 +1699,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   border: 1px solid #0b0e10;
   border-radius: 6px;
   background: linear-gradient(180deg, #394248, #20262a);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09);
+  box-shadow: var(--bevel);
 }
 .fx-badge {
   display: grid;
@@ -1706,9 +1946,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   .app { padding: 6px; }
   .brand-title { font-size: 21px; }
   .player { grid-template-columns: minmax(0, 1fr) 22px 66px; gap: 7px; padding: 9px; }
+  /* El espejo se mantiene también en cabina apilada. */
+  #player-a { grid-template-columns: 66px 22px minmax(0, 1fr); }
+  #player-b { grid-template-columns: minmax(0, 1fr) 22px 66px; }
   .pitch-fader { width: 24px; }
   .transport { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .mixer-grid { gap: 8px; }
+  .main-block {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "dial meter"
+      "slider slider"
+      "caption caption";
+    width: 100%;
+    gap: 8px 10px;
+    padding: 8px 10px;
+  }
   .deck-detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-cell.detail-wide { grid-column: span 2; }
   .fx-channel { grid-template-columns: 22px repeat(2, minmax(0, 1fr)); gap: 7px; padding: 8px; }

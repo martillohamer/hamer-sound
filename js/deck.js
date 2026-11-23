@@ -347,6 +347,13 @@ class Deck {
     r.addEventListener('drop', (e) => {
       const t = dragInfo(e);
       if (!t.files && !t.row) return;
+      // Los archivos del explorador llegan aquí (la captura de library.js los
+      // deja pasar). Marcamos el soltar para que el posible 'click' posterior
+      // no abra el selector de la LCD.
+      if (window.Library && typeof window.Library.markDrop === 'function') window.Library.markDrop(this.id);
+      // library.js ya resolvió este soltar en fase de captura: repetir la
+      // carga aquí provocaría dos play() sobre la misma <audio> (AbortError).
+      if (e.__hammerDropHandled) return;
       e.preventDefault();
       e.stopPropagation();
       clearDragHighlight();
@@ -370,7 +377,9 @@ class Deck {
       if (!id && lib) id = lib._dragId || (lib._dragTrack ? String(lib._dragTrack.id) : '');
       if (!id || !lib) return;
       // Soltar sobre el deck (título, LCD, botones…) carga Y reproduce.
-      if (typeof lib.dropTo === 'function') lib.dropTo(id, this.id, true);
+      // Se pasa el evento para que Library use el mismo resolvedor que la
+      // captura en document, sin depender de los tipos del dataTransfer.
+      if (typeof lib.dropTo === 'function') lib.dropTo(id, this.id, true, e);
       else if (typeof lib.loadTo === 'function') {
         lib.loadTo(lib.tracks.find(x => String(x.id) === String(id)) || null, this.id, true);
       }
@@ -403,6 +412,16 @@ class Deck {
       });
 
       lcd.addEventListener('click', (e) => {
+        // Un drop sobre la LCD puede ir seguido de un 'click' sintético: eso
+        // NO es una petición de archivo, se acaba de cargar una pista ahí.
+        // Library consume la supresión SOLO para este deck: un clic posterior
+        // en la LCD vacía del otro player sigue abriendo su selector.
+        const lib = window.Library;
+        if (lib && typeof lib.shouldIgnoreLcdClick === 'function' &&
+            lib.shouldIgnoreLcdClick(this.id)) {
+          e.preventDefault();
+          return;
+        }
         if (e.target.closest('.lcd-info')) return;              // INFO tiene su propio listener
         if (this.track && e.target.closest('.lcd-timer')) return; // el timer es zona de seek
         if (this.track) return;                                 // LCD ocupada: no se recarga
@@ -648,15 +667,16 @@ class Deck {
   // ---------- Carga y reproducción ----------
   // Aviso único para pistas restauradas de localStorage (sin blob: en sesión).
   // No detenemos el audio que ya suene: se rechaza la CARGA, no se expulsa el
-  // plato; pero sí limpiamos un LOADING huérfano y dejamos rastro en consola.
+  // plato; sí limpiamos un LOADING huérfano y avisamos en LCD + barra de estado,
+  // sin lanzar errores ni warnings en consola (es un estado esperado).
   notifyMissing(track) {
     const name = track ? (track.title || track.name || 'pista') : 'pista';
-    this.showMessage('⚠ SIN ARCHIVO · «' + name + '» · vuelve a añadir el MP3 o arrastra el archivo aquí');
+    // Es un estado esperado (las URLs blob: nunca se guardan), no un error:
+    // no ensuciamos la consola; el aviso va a la LCD y a la barra de estado.
+    this.showMessage('⚠ SIN ARCHIVO · «' + name + '» · arrastra el MP3 aquí o clic derecho → Enlazar MP3');
     if (!this.audio.src && this.state === 'LOADING') this.setState('CLOSED');
-    console.warn('[hammer] Deck ' + this.id.toUpperCase() + ': «' + name +
-      '» no tiene archivo enlazado en esta sesión (las URLs blob: nunca se guardan).');
     window.setStatus && window.setStatus('⚠ «' + name +
-      '»: sin archivo en esta sesión · vuelve a añadir el MP3 o arrástralo al deck para enlazarlo');
+      '»: sin archivo en esta sesión · arrastra el MP3 al deck o usa clic derecho → Enlazar MP3');
     return false;
   }
 
@@ -689,7 +709,11 @@ class Deck {
     this.setState('LOADING');
     this.showMessage(track.name || '-- cargando --');
     this.audio.src = track.url;
-    this.audio.load();
+    // Asignar src ya inicia la carga. Llamar a load() justo antes de play() es
+    // una fuente de AbortError en Chromium: load() reinicia el elemento y puede
+    // abortar la reproducción que acabamos de pedir. Con autoplay no hacemos
+    // esa segunda carga; sin autoplay se mantiene el comportamiento de siempre.
+    if (!autoplay) this.audio.load();
     this.applyPitch();
 
     // Clave de la unificación: arrancar AQUÍ, dentro del gesto del usuario, sin
@@ -757,7 +781,41 @@ class Deck {
     return false;
   }
 
-  play() {
+  // Chromium puede rechazar el primer play() con AbortError mientras termina
+  // de preparar un blob:. Reintentamos UNA vez en cuanto haya datos, con un
+  // guard de tiempo por si el evento se pierde. El token y la src se congelan
+  // al pedir el reintento: si mientras tanto se cargó otra pista (o se expulsó
+  // el plato), el reintento se cancela. Así nunca suena una pista que el
+  // usuario no pidió reproducir (reproducción fantasma).
+  _retryPlayAfterAbort() {
+    return new Promise((resolve) => {
+      if (!this.audio.src || !this.track) { resolve(false); return; }
+      const token = this._loadToken;
+      const src = this.audio.src;
+      let done = false;
+      const cleanup = () => {
+        this.audio.removeEventListener('canplay', go);
+        this.audio.removeEventListener('loadeddata', go);
+        clearTimeout(timer);
+      };
+      const go = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        if (token !== this._loadToken || this.audio.src !== src || !this.track) {
+          resolve(false);
+          return;
+        }
+        resolve(this.play(false));
+      };
+      const timer = setTimeout(go, 1200);
+      this.audio.addEventListener('canplay', go);
+      this.audio.addEventListener('loadeddata', go);
+      if (this.audio.readyState >= 2) go();
+    });
+  }
+
+  play(retry = true) {
     // Mismo punto de reanudación que load(): así da igual si el sonido se pide
     // desde la LCD, la biblioteca, el arrastre o el botón PLAY del deck.
     this._resumeCtx();
@@ -774,10 +832,18 @@ class Deck {
       return Promise.resolve(false);
     }
     let p;
-    try { p = this.audio.play(); } catch (err) { return Promise.resolve(this._playError(err)); }
+    try { p = this.audio.play(); } catch (err) {
+      if (retry && err && err.name === 'AbortError') return this._retryPlayAfterAbort();
+      return Promise.resolve(this._playError(err));
+    }
     if (!p) { this.setState('PLAYING'); return Promise.resolve(true); }
     return Promise.resolve(p).then(() => { this.setState('PLAYING'); return true; })
-      .catch((err) => this._playError(err));
+      .catch((err) => {
+        if (retry && err && err.name === 'AbortError' && this.audio.src) {
+          return this._retryPlayAfterAbort();
+        }
+        return this._playError(err);
+      });
   }
 
   pause() {

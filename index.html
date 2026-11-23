@@ -18,7 +18,7 @@
           <span class="clock-led" aria-hidden="true"></span>
         </div>
         <h1 class="brand-title">dj. hammer</h1>
-        <span class="brand-sub">PCDJ · SILVER EDITION</span>
+        <span class="brand-sub">PCDJ - Ciclón - DJCICLON</span>
       </div>
 
       <div class="session" aria-label="Reloj de sesión y contador de temas">
@@ -409,7 +409,10 @@
           </div>
 
           <div class="mix-vu">
-            <canvas id="vu-meter" width="90" height="150" aria-label="Vúmetro máster"></canvas>
+            <div class="vu-wrap">
+              <canvas id="vu-meter" width="90" height="150" aria-label="Vúmetro máster"></canvas>
+              <div class="vu-ruler" aria-hidden="true"></div>
+            </div>
             <span class="chan-caption">master VU</span>
           </div>
 
@@ -445,6 +448,35 @@
           <input type="range" id="crossfader" min="-1" max="1" step=".01" value="0" aria-label="Crossfader">
           <span class="xfade-end">B</span>
           <output class="xfade-val" id="cf-value" for="crossfader" title="Porcentaje del lado B">50%</output>
+        </div>
+
+        <!-- MAIN: dial + indicador + fader integrado. No crea ningún nodo de
+             audio nuevo: todos los controles escriben en el mismo gain maestro
+             (window.masterGain) a través de setMaster(), igual que #master y
+             #cfg-master. El analizador de cada deck sigue pre-crossfader. -->
+        <div class="main-row">
+          <div class="main-block">
+            <span class="main-caption">MAIN</span>
+            <div class="main-dial-wrap">
+              <div class="dial main-dial" id="main-dial" role="slider" tabindex="0"
+                   aria-label="Nivel principal MAIN" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80"
+                   title="Nivel MAIN · arrastra, rueda o doble clic = 80%">
+                <span class="dial-face" aria-hidden="true"><span class="dial-pointer"></span></span>
+              </div>
+              <span class="main-dial-ticks" aria-hidden="true"></span>
+            </div>
+            <div class="main-meta">
+              <div class="main-leds" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span>
+              </div>
+              <output id="main-out" class="main-out" for="main-level">80%</output>
+            </div>
+            <label class="main-slider">
+              <span>LEVEL</span>
+              <input type="range" id="main-level" min="0" max="1" step=".01" value=".8" aria-label="Nivel MAIN (salida principal)">
+            </label>
+          </div>
         </div>
 
         <div class="mixer-foot">
@@ -564,17 +596,22 @@
 
   <!-- Menú contextual de asignación rápida (se posiciona junto al cursor desde JS) -->
   <div class="track-context-menu" id="track-ctx-menu" role="menu" aria-label="Asignar pista a player" aria-hidden="true">
-    <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="0">Cargar en Play A</button>
-    <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="0">Cargar en Play B</button>
+    <!-- Una sola opción por deck: las cuatro anteriores hacían exactamente lo
+         mismo (cargar + reproducir), así que sólo añadían ruido al menú. -->
+    <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="1">▶ Cargar y reproducir en Play A</button>
+    <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="1">▶ Cargar y reproducir en Play B</button>
     <div class="ctx-divider" aria-hidden="true"></div>
-    <button type="button" role="menuitem" data-ctx-deck="A" data-ctx-play="1">Play A (Cargar y reproducir)</button>
-    <button type="button" role="menuitem" data-ctx-deck="B" data-ctx-play="1">Play B (Cargar y reproducir)</button>
-    <div class="ctx-divider" aria-hidden="true"></div>
+    <button type="button" role="menuitem" data-ctx-relink hidden
+            title="Elige el MP3 en el disco y enlázalo con esta pista sin cambiar su identidad">Enlazar MP3…</button>
     <button type="button" role="menuitem" data-ctx-clean title="Limpiar título y artista de esta pista (no modifica el archivo)">Limpiar título</button>
     <div class="ctx-divider" aria-hidden="true"></div>
     <div class="ctx-folders-title">MOVER A RECORDCASE</div>
     <div id="ctx-folders" class="ctx-folders"></div>
   </div>
+
+  <!-- Selector usado por «Enlazar MP3…» del menú derecho. El archivo elegido
+       se asocia a la pista concreta sin tocar su clave name|size|lastModified. -->
+  <input type="file" id="relink-file-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.opus" hidden>
 
   <!-- Menú contextual de recordcases: clic derecho sobre una chip o sobre la
        zona de biblioteca. Se posiciona junto al cursor desde library.js. -->
