@@ -264,10 +264,32 @@
     _bind() {
       const el = this.el;
       el.addEventListener('wheel', (e) => {
+        const dir = e.deltaY > 0 ? -1 : 1;
+        const next = Math.max(this.min, Math.min(this.max, this.value + dir * this.step));
+        if (next === this.value) return; // en el tope, deja desplazar la página
         e.preventDefault();
-        this.setValue(this.value + (e.deltaY > 0 ? -this.step : this.step));
+        this.setValue(next);
       }, { passive: false });
 
+      // Sin setPointerCapture: el gesto se sigue en window y se libera al
+      // soltar, salir del control o perder el foco. Nunca queda el ratón
+      // "atrapado" impidiendo arrastrar una pista justo después.
+      let pointerId = null;
+      const onMove = (e) => {
+        if (!this._dragging || e.pointerId !== pointerId) return;
+        const span = this.max - this.min;
+        const delta = (this._sy - e.clientY) + (e.clientX - this._sx);
+        this.setValue(this._sv + (delta / 140) * span);
+      };
+      const onUp = (e) => {
+        if (e && e.pointerId !== undefined && e.pointerId !== pointerId) return;
+        this._dragging = false;
+        pointerId = null;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        window.removeEventListener('blur', onUp);
+      };
       el.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         e.preventDefault();
@@ -275,21 +297,12 @@
         this._sx = e.clientX;
         this._sy = e.clientY;
         this._sv = this.value;
-        try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+        pointerId = e.pointerId;
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        window.addEventListener('blur', onUp);
       });
-      el.addEventListener('pointermove', (e) => {
-        if (!this._dragging) return;
-        const span = this.max - this.min;
-        const delta = (this._sy - e.clientY) + (e.clientX - this._sx);
-        this.setValue(this._sv + (delta / 140) * span);
-      });
-      const stop = (e) => {
-        if (!this._dragging) return;
-        this._dragging = false;
-        try { el.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
-      };
-      el.addEventListener('pointerup', stop);
-      el.addEventListener('pointercancel', stop);
 
       el.addEventListener('dblclick', (e) => {
         e.preventDefault();

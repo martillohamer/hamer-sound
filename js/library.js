@@ -73,10 +73,22 @@ const Library = {
       self.cleanTitles(self.sel || null);
     });
 
+    // TODOS los botones de carga usan el mismo camino y arrancan el sonido.
+    // Antes «→ A/B» sólo cargaban (deck READY en silencio) y sólo «▶→ A/B»
+    // reproducían, que era una de las causas de «desde la playlist no suena».
     const loadA = $('#btn-load-a');
     const loadB = $('#btn-load-b');
-    if (loadA) loadA.addEventListener('click', () => self.loadSelected('A'));
-    if (loadB) loadB.addEventListener('click', () => self.loadSelected('B'));
+    if (loadA) loadA.addEventListener('click', () => self.loadSelected('A', true));
+    if (loadB) loadB.addEventListener('click', () => self.loadSelected('B', true));
+
+    const playA = $('#btn-playload-a');
+    const playB = $('#btn-playload-b');
+    if (playA) playA.addEventListener('click', () => self.loadSelected('A', true));
+    if (playB) playB.addEventListener('click', () => self.loadSelected('B', true));
+
+    // Empezar de cero sin tocar los archivos del disco.
+    const clearLib = $('#btn-clear-library');
+    if (clearLib) clearLib.addEventListener('click', () => self.clearLibrary());
 
     const assignSel = $('#folder-assign');
     const assignBtn = $('#btn-folder-assign');
@@ -121,6 +133,15 @@ const Library = {
         const id = e.dataTransfer && e.dataTransfer.getData('text/plain');
         const track = self.tracks.find(t => String(t.id) === String(id));
         if (track) self.assignToFolder(track, chip.dataset.folder);
+      });
+      // Clic derecho sobre una chip: menú propio de la app (crear / borrar).
+      // El borrado real y su confirmación siguen en deleteFolder().
+      chips.addEventListener('contextmenu', (e) => {
+        const chip = e.target.closest('[data-folder]');
+        if (!chip) return; // la zona vacía la abre el handler de .lib-header
+        e.preventDefault();
+        e.stopPropagation();
+        self.showFolderContextMenu(e.clientX, e.clientY, chip.dataset.folder);
       });
     }
 
@@ -191,10 +212,24 @@ const Library = {
       tbody.addEventListener('dragstart', (e) => {
         const row = e.target.closest('tr');
         if (!row) return;
-        e.dataTransfer.setData('text/plain', row.dataset.id);
-        e.dataTransfer.effectAllowed = 'copy';
-        const track = self.tracks.find(t => String(t.id) === row.dataset.id);
-        if (track) self.select(track);
+        const id = row.dataset.id;
+        const track = self.tracks.find(t => String(t.id) === id) || null;
+
+        // Guardamos la pista SIN llamar a select(): select() → render() →
+        // tbody.innerHTML = ... destruiría la fila origen y el navegador
+        // cancelaría el arrastre antes de poder soltarlo en un deck.
+        self._dragTrack = track;
+        self._dragId = String(id);
+        if (row) row.classList.add('dragging');
+        if (tbody) tbody.classList.add('dragging-active');
+
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', String(id));
+          e.dataTransfer.setData('application/x-hammer-track', String(id));
+          e.dataTransfer.effectAllowed = 'copy';
+        }
+        // La clase .dragging da la pista visual sin repintar ni falsificar
+        // la selección real (que se aplica al soltar, desde loadTo()).
       });
     }
 
@@ -243,11 +278,80 @@ const Library = {
       if (app) app.classList.remove('drag-over');
       if (e.dataTransfer && e.dataTransfer.files) self.add(e.dataTransfer.files);
     });
-    document.addEventListener('dragend', () => {
-      if (app) app.classList.remove('drag-over');
-      if (lib) lib.classList.remove('drag-over');
-      document.querySelectorAll('.chip.drop-hover').forEach(c => c.classList.remove('drop-hover'));
+    // Mientras se arrastra una fila, todos los decks se marcan como destinos
+    // válidos (pista visual). El resalte fuerte se aplica al que esté debajo.
+    document.addEventListener('dragstart', (e) => {
+      const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+      if (types.includes('application/x-hammer-track') && app) app.classList.add('dragging-track');
     });
+
+    const clearDrag = () => {
+      if (self._stopDragAutoScroll) self._stopDragAutoScroll();
+      if (app) {
+        app.classList.remove('drag-over', 'dragging-track');
+      }
+      if (lib) lib.classList.remove('drag-over');
+      if (tbody) tbody.classList.remove('dragging-active');
+      document.querySelectorAll('tr.dragging').forEach(tr => tr.classList.remove('dragging'));
+      document.querySelectorAll('.chip.drop-hover').forEach(c => c.classList.remove('drop-hover'));
+      document.querySelectorAll('.drop-target.drag-over').forEach(el => el.classList.remove('drag-over'));
+      self._dragTrack = null;
+      self._dragId = '';
+    };
+    document.addEventListener('dragend', clearDrag);
+    document.addEventListener('drop', clearDrag);
+    // Cuando el puntero sale de la ventana durante un arrastre, dragend puede
+    // no llegar: la señal de blur garantiza que no quede nada resaltado.
+    window.addEventListener('blur', clearDrag);
+    self._clearDrag = clearDrag;
+
+    // Red de seguridad para arrastrar una FILA sobre un deck. El manejador
+    // propio del panel (_bindPointerUI en deck.js) sigue siendo el principal,
+    // pero en algunos navegadores el drop sobre un control hijo se pierde o
+    // `dataTransfer.types` no expone los tipos propios durante el arrastre.
+    // En captura vemos el evento de todos modos: primero nos aseguramos de que
+    // el dragover sea aceptado (para que exista 'drop') y luego, si el destino
+    // está dentro de un player, garantizamos carga + autoplay por el camino
+    // único. Los archivos del explorador se dejan al manejador del deck.
+    const rowDragOverDeck = (e) => {
+      if (!e.target || !e.target.closest || !e.target.closest('.player')) return null;
+      const dt = e.dataTransfer;
+      const types = dt ? Array.from(dt.types || []) : [];
+      const files = types.includes('Files') || !!(dt && dt.files && dt.files.length);
+      const row = types.includes('application/x-hammer-track') ||
+        types.includes('text/plain') || !!(self._dragTrack || self._dragId);
+      return (!files && row) ? dt : null;
+    };
+    document.addEventListener('dragover', (e) => {
+      const dt = rowDragOverDeck(e);
+      if (!dt) return;
+      e.preventDefault();
+      dt.dropEffect = 'copy';
+    }, true);
+    document.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const types = dt ? Array.from(dt.types || []) : [];
+      const files = types.includes('Files') || !!(dt && dt.files && dt.files.length);
+      const row = types.includes('application/x-hammer-track') ||
+        types.includes('text/plain') || !!(self._dragTrack || self._dragId);
+      if (files || !row) return;
+      const target = e.target && e.target.closest ? e.target.closest('.player') : null;
+      if (!target) return;
+      const deckId = target.id === 'player-b' ? 'B' : 'A';
+      let id = '';
+      try {
+        id = (dt && (dt.getData('application/x-hammer-track') || dt.getData('text/plain'))) || '';
+      } catch (_) { id = ''; }
+      id = id || self._dragId || (self._dragTrack ? String(self._dragTrack.id) : '');
+      if (!id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      self.dropTo(id, deckId, true);
+    }, true);
+
+    // El arrastre de una fila puede llevar el puntero fuera de la vista:
+    // auto-scroll suave cerca de los bordes, sin capturar el puntero.
+    this._bindDragAutoScroll();
 
     // Ctrl+V
     document.addEventListener('paste', (e) => {
@@ -259,6 +363,84 @@ const Library = {
     });
 
     this._bindContextMenu();
+    this._bindFolderContextMenu();
+  },
+
+  // ---------- Auto-scroll durante el arrastre de filas ----------
+  // Sólo se activa mientras se arrastra una pista de la biblioteca (tipo
+  // 'application/x-hammer-track'). Escuchamos en fase de captura: los decks
+  // y la biblioteca hacen stopPropagation() en su dragover, pero aquí seguimos
+  // viendo el evento. No se llama a preventDefault ni se captura el puntero:
+  // el movimiento vertical sigue siendo totalmente libre y el ratón nunca queda
+  // atrapado al soltar cerca de un borde.
+  _bindDragAutoScroll() {
+    const self = this;
+    const EDGE = 100;        // px de zona sensible junto al borde
+    const MAX_SPEED = 22;    // px por frame justo en el borde
+    const MIN_SPEED = 4;
+    let raf = null;
+    let x = 0;
+    let y = 0;
+    let active = false;
+
+    const speed = (dist) => Math.ceil(
+      MIN_SPEED + (1 - Math.max(0, dist) / EDGE) * (MAX_SPEED - MIN_SPEED));
+
+    const step = () => {
+      raf = null;
+      if (!active || !self._dragTrack) return;
+      const vh = window.innerHeight || document.documentElement.clientHeight || 768;
+      const top = y >= 0 && y < EDGE;
+      const bottom = y > vh - EDGE && y < vh;
+      if (top || bottom) {
+        const dir = top ? -1 : 1;
+        const dist = top ? y : vh - y;
+        const delta = dir * speed(dist);
+
+        // Si el puntero está sobre la tabla y ésta todavía puede scrollear en
+        // esa dirección, se mueve el contenedor; si no, se mueve la página.
+        const table = $('.lib-table');
+        const box = table && typeof table.getBoundingClientRect === 'function'
+          ? table.getBoundingClientRect() : null;
+        let movedContainer = false;
+        if (box && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
+          const before = table.scrollTop;
+          table.scrollTop += delta;
+          movedContainer = table.scrollTop !== before;
+        }
+        if (!movedContainer && typeof window.scrollBy === 'function') {
+          window.scrollBy(0, delta);
+        }
+      }
+      if (active) raf = requestAnimationFrame(step);
+    };
+
+    const track = (e) => {
+      if (e.clientX != null) x = e.clientX;
+      if (e.clientY != null) y = e.clientY;
+      const vh = window.innerHeight || document.documentElement.clientHeight || 768;
+      active = !!self._dragTrack &&
+        ((y >= 0 && y < EDGE) || (y > vh - EDGE && y < vh));
+      if (active && raf === null) raf = requestAnimationFrame(step);
+      if (!active && raf !== null) { cancelAnimationFrame(raf); raf = null; }
+    };
+
+    const stop = () => {
+      active = false;
+      if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
+    };
+
+    document.addEventListener('dragover', track, { capture: true });
+    // Al scrollear, el elemento bajo el puntero cambia y pueden llegar
+    // dragenter/dragleave; dragenter lo rearma para no perder el borde.
+    document.addEventListener('dragenter', track, { capture: true });
+    // dragover deja de llegar cuando el puntero sale de la ventana: estas
+    // señales garantizan que no sigamos scrolleando "a ciegas".
+    document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) stop(); }, true);
+    document.addEventListener('drop', stop, true);
+    document.addEventListener('dragend', stop, true);
+    window.addEventListener('blur', stop);
+    self._stopDragAutoScroll = stop;
   },
 
   // ---------- Persistencia ----------
@@ -556,6 +738,23 @@ const Library = {
     return f;
   },
 
+  // Creación ágil desde el menú contextual (chip o barra): nombre directo y,
+  // si no se puede preguntar o se dejó vacío, el diálogo de recordcases.
+  _promptNewFolder() {
+    let answer = null;
+    if (typeof window.prompt === 'function') {
+      try { answer = window.prompt('Nombre de la nueva recordcase:'); } catch (_) { answer = null; }
+    }
+    if (answer === null) return; // cancelado
+    const name = String(answer).trim();
+    if (name) {
+      const f = this.createFolder(name);
+      if (f) this.setActiveFolder(f.id);
+    } else if (this._openRecordcase) {
+      this._openRecordcase(true);
+    }
+  },
+
   renameFolder(id, name) {
     name = String(name || '').trim();
     const f = this.folders.find(x => String(x.id) === String(id));
@@ -572,34 +771,58 @@ const Library = {
     return true;
   },
 
-  deleteFolder(id) {
-    if (String(id) === 'default') {
-      window.setStatus && window.setStatus('La carpeta Default no se puede borrar');
+  // Las carpetas base ('all' = Todas y 'default') son del sistema: nunca se
+  // pueden borrar. Las demás piden confirmación y sus pistas se reasignan a
+  // Default, sin tocar archivos ni URLs (el store sigue siendo sólo metadatos).
+  deleteFolder(id, opts = {}) {
+    const key = String(id);
+    const f = this.folders.find(x => String(x.id) === key);
+    const system = key === 'all' || key === 'default' ||
+      (f && String(f.id) === 'all');
+    if (system || key === 'undefined' || !f) {
+      window.setStatus && window.setStatus(
+        system ? '«Todas» y «Default» son carpetas del sistema y no se pueden borrar'
+               : 'No se encontró esa carpeta');
       return false;
     }
-    const f = this.folders.find(x => String(x.id) === String(id));
-    if (!f) return false;
-    this.folders = this.folders.filter(x => x.id !== f.id);
-    this.tracks.forEach(t => { if (String(t.folder) === String(id)) t.folder = 'default'; });
-    if (this.activeFolder === String(id)) this.activeFolder = 'all';
+    if (!opts.skipConfirm && typeof window.confirm === 'function') {
+      const n = this.tracks.filter(t => String(t.folder) === key).length;
+      const dest = this.folderName('default') || 'Default';
+      const msg = '¿Borrar la recordcase «' + f.name + '»?\n\n' +
+        (n ? n + ' pista(s) pasarán a «' + dest + '». ' : '') +
+        'Tus archivos de audio no se borran.';
+      if (!window.confirm(msg)) {
+        window.setStatus && window.setStatus('Borrado cancelado');
+        return false;
+      }
+    }
+    this.folders = this.folders.filter(x => String(x.id) !== key);
+    this.tracks.forEach(t => { if (String(t.folder) === key) t.folder = 'default'; });
+    if (String(this.activeFolder) === key) this.activeFolder = 'default';
+    if (String(this._assignTarget) === key) this._assignTarget = '';
     this._writeMap();
     this.render();
     this._renderRecordcaseList();
-    window.setStatus && window.setStatus('Carpeta «' + f.name + '» borrada · sus pistas pasan a Default');
+    window.setStatus && window.setStatus('Carpeta «' + f.name + '» borrada · sus pistas pasan a ' + this.folderName('default'));
     return true;
   },
 
   _bindRecordcase() {
     const self = this;
     const dlg = $('#dlg-recordcase');
-    const open = () => {
+    const open = (focusNew) => {
       self._renderRecordcaseList();
       if (dlg && !dlg.open && typeof dlg.showModal === 'function') dlg.showModal();
+      if (focusNew) {
+        const name = $('#rc-new-name');
+        if (name && typeof name.focus === 'function') name.focus();
+      }
     };
+    self._openRecordcase = open;
     const newBtn = $('#btn-folder-new');
     const editBtn = $('#btn-folder-edit');
-    if (newBtn) newBtn.addEventListener('click', open);
-    if (editBtn) editBtn.addEventListener('click', open);
+    if (newBtn) newBtn.addEventListener('click', () => open(true));
+    if (editBtn) editBtn.addEventListener('click', () => open(false));
 
     const input = $('#rc-new-name');
     const doAdd = () => {
@@ -637,8 +860,9 @@ const Library = {
       return '<div class="rc-row">' +
         '<input type="text" data-rc-id="' + this._esc(f.id) + '" value="' + this._esc(f.name) + '" maxlength="40" aria-label="Nombre de carpeta">' +
         '<span class="rc-count">' + n + ' pista(s)' + label + '</span>' +
-        (String(f.id) === 'default' ? '<span></span>'
-          : '<button type="button" class="danger" data-rc-del="' + this._esc(f.id) + '" title="Borrar carpeta">✕</button>') +
+        (String(f.id) === 'default' ? '<span class="rc-count">base</span>'
+          : '<button type="button" class="danger" data-rc-del="' + this._esc(f.id) +
+            '" title="Borrar carpeta (pide confirmación; sus pistas van a Default)">✕ Borrar</button>') +
         '</div>';
     }).join('');
   },
@@ -703,13 +927,17 @@ const Library = {
     const bar = $('#folder-chips');
     if (bar) {
       const active = String(this.activeFolder);
+      const baseTip = 'Clic = filtrar por recordcase';
       let html = '<button type="button" class="chip' + (active === 'all' ? ' active' : '') +
-        '" data-folder="all">Todas<span class="chip-count">' + this.tracks.length + '</span></button>';
+        '" data-folder="all" title="' + baseTip + ' (carpeta base)">Todas<span class="chip-count">' +
+        this.tracks.length + '</span></button>';
       this.folders.forEach(f => {
         const id = String(f.id);
         const n = this.tracks.filter(t => String(t.folder) === id).length;
+        const tip = (id === 'default') ? baseTip + ' (carpeta base)'
+          : baseTip + ' · clic derecho = borrar carpeta';
         html += '<button type="button" class="chip' + (active === id ? ' active' : '') +
-          '" data-folder="' + this._esc(id) + '">' + this._esc(f.name) +
+          '" data-folder="' + this._esc(id) + '" title="' + tip + '">' + this._esc(f.name) +
           '<span class="chip-count">' + n + '</span></button>';
       });
       bar.innerHTML = html;
@@ -757,7 +985,10 @@ const Library = {
       if (!item || !menu.contains(item)) return;
       e.preventDefault();
       e.stopPropagation();
-      const track = self._ctxTrack;
+      // El menú puede cerrarse (blur, scroll, clic fuera) entre la apertura y
+      // el clic: la fila también quedó seleccionada en el contextmenu, así que
+      // la pista se resuelve igual aunque _ctxTrack ya se haya limpiado.
+      const track = self._ctxTrack || self.sel;
       const deck = item.getAttribute('data-ctx-deck');
       const autoplay = item.getAttribute('data-ctx-play') === '1';
       self.hideContextMenu();
@@ -780,10 +1011,9 @@ const Library = {
     window.addEventListener('blur', () => self.hideContextMenu());
   },
 
-  showContextMenu(clientX, clientY) {
-    const menu = this._ctxMenu;
-    if (!menu) return;
-    this._renderCtxFolders();
+  // Coloca cualquier menú de la app junto al cursor, dejando siempre un margen
+  // y evitando que se salga de la ventana (z-index alto, no queda tapado).
+  _positionMenu(menu, clientX, clientY) {
     menu.classList.add('open');
     menu.setAttribute('aria-hidden', 'false');
 
@@ -806,6 +1036,14 @@ const Library = {
     menu.style.top = top + 'px';
   },
 
+  showContextMenu(clientX, clientY) {
+    const menu = this._ctxMenu;
+    if (!menu) return;
+    if (this._folderMenu) this.hideFolderContextMenu();
+    this._renderCtxFolders();
+    this._positionMenu(menu, clientX, clientY);
+  },
+
   _renderCtxFolders() {
     const box = $('#ctx-folders');
     if (!box) return;
@@ -821,6 +1059,85 @@ const Library = {
     menu.classList.remove('open');
     menu.setAttribute('aria-hidden', 'true');
     this._ctxTrack = null;
+  },
+
+  // ---------- Menú contextual de recordcases ----------
+  _bindFolderContextMenu() {
+    const self = this;
+    const menu = $('#folder-ctx-menu');
+    if (!menu) return;
+    this._folderMenu = menu;
+
+    menu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-folder-ctx]');
+      if (!item || !menu.contains(item)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const action = item.getAttribute('data-folder-ctx');
+      const id = self._folderCtxId;
+      self.hideFolderContextMenu();
+      if (action === 'new') {
+        self._promptNewFolder();
+      } else if (action === 'delete' && id) {
+        self.deleteFolder(id); // confirmación + reasignación a Default
+      } else if (action === 'clear') {
+        self.clearLibrary();   // confirmación; NO borra archivos del disco
+      }
+    });
+
+    // Cierre: clic fuera (capture), Escape, scroll, resize y pérdida de foco.
+    document.addEventListener('click', (e) => {
+      if (!menu.classList.contains('open')) return;
+      if (e.target === menu || menu.contains(e.target)) return;
+      self.hideFolderContextMenu();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.key === 'Esc') self.hideFolderContextMenu();
+    });
+    const table = $('.lib-table');
+    if (table) table.addEventListener('scroll', () => self.hideFolderContextMenu(), { passive: true });
+    window.addEventListener('resize', () => self.hideFolderContextMenu());
+    window.addEventListener('blur', () => self.hideFolderContextMenu());
+
+    // Zona de biblioteca / barra de carpetas: menú propio, nunca el del
+    // navegador. Las filas de pista abren el suyo y paran la propagación.
+    const header = $('.lib-header');
+    if (header) header.addEventListener('contextmenu', (e) => {
+      if (e.target.closest('[data-folder]')) return; // ya lo abre la chip
+      e.preventDefault();
+      e.stopPropagation();
+      self.showFolderContextMenu(e.clientX, e.clientY, '');
+    });
+    const library = $('.library');
+    if (library && library !== header) library.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      self.showFolderContextMenu(e.clientX, e.clientY, '');
+    });
+  },
+
+  showFolderContextMenu(clientX, clientY, id) {
+    const menu = this._folderMenu;
+    if (!menu) return;
+    if (this._ctxMenu) this.hideContextMenu();
+    const key = String(id || '');
+    const system = key === 'all' || key === 'default';
+    const folder = this.folders.find(f => String(f.id) === key && !system);
+    this._folderCtxId = folder ? key : '';
+
+    const del = menu.querySelector('[data-folder-ctx="delete"]');
+    if (del) del.hidden = !folder;
+    const title = $('#folder-ctx-title');
+    if (title) title.textContent = folder ? folder.name.toUpperCase() : 'RECORDCASES';
+    this._positionMenu(menu, clientX, clientY);
+  },
+
+  hideFolderContextMenu() {
+    const menu = this._folderMenu;
+    if (!menu) return;
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    this._folderCtxId = '';
   },
 
   _trackFromRow(row) {
@@ -843,28 +1160,92 @@ const Library = {
     return A.state === 'PLAYING' ? 'B' : 'A';
   },
 
-  loadTo(track, deckId, autoplay = false) {
+  // Punto de entrada ÚNICO para cualquier carga: LCD, doble clic, botones,
+  // menú contextual, arrastre y navegación de pistas. Lo único que cambia es
+  // el deck de destino y si se pide reproducción (por defecto, sí).
+  loadTo(track, deckId, autoplay = true) {
     if (!track) return false;
-    if (!track.url) {
-      this.select(track);
-      window.setStatus && window.setStatus('«' + track.title + '»: vuelve a añadir el archivo para enlazarlo');
-      return false;
-    }
     const key = String(deckId || 'A').toUpperCase();
     const deck = window.decks && window.decks[key];
-    if (!deck) return false;
     this.select(track);
-    deck.load(track, !!autoplay);
-    window.setStatus && window.setStatus(track.title + ' → Player ' + key + (autoplay ? ' · PLAY' : ''));
+    if (!track.url) {
+      // Pista restaurada de localStorage: aviso claro en LCD, barra y consola.
+      // Nunca finjimos un PLAY: no hay archivo enlazado en esta sesión, pero
+      // el deck queda intacto (ni LOADING colgado ni errores en consola).
+      const title = track.title || track.name || 'pista';
+      if (deck && typeof deck.notifyMissing === 'function') deck.notifyMissing(track);
+      else {
+        if (deck && typeof deck.showMessage === 'function') {
+          deck.showMessage('⚠ SIN ARCHIVO · vuelve a añadir el MP3 o arrastra el archivo');
+        }
+        window.setStatus && window.setStatus('⚠ «' + title +
+          '»: vuelve a añadir el MP3 o arrástralo al deck para enlazarlo');
+      }
+      return false;
+    }
+    if (!deck) return false;
+    // Soltar/cargar es un gesto del usuario: reanudamos el AudioContext aquí,
+    // de forma síncrona, para que el play() posterior no se quede bloqueado.
+    // Deck.load()/play() vuelven a hacerlo por su cuenta: es idempotente.
+    if (deck && typeof deck._resumeCtx === 'function') deck._resumeCtx();
+    if (window.ctx && window.ctx.state === 'suspended' && typeof window.ctx.resume === 'function') {
+      try { window.ctx.resume(); } catch (_) { /* ignore */ }
+    }
+    const name = track.title || track.name || 'pista';
+    const requested = deck.load(track, !!autoplay);
+    window.setStatus && window.setStatus(name + ' → Player ' + key + ' · cargando…');
+
+    // Antes se escribía «· PLAY» aquí mismo, aunque el archivo estuviera
+    // roto o el autoplay bloqueado. Ahora el estado final llega del resultado
+    // real de load()/play() (que también actualizan LCD y consola al fallar).
+    if (requested && typeof requested.then === 'function') {
+      requested.then((ok) => {
+        if (!ok) return; // load/play ya informaron del error
+        const gain = window.getXfGain ? window.getXfGain(key) : 1;
+        const masterLevel = window.masterGain ? window.masterGain.gain.value
+          : (window.getMaster ? window.getMaster() : 1);
+        if (gain < 0.03 || masterLevel <= 0.001) {
+          window.setStatus && window.setStatus(
+            '⚠ «' + name + '» cargada pero silenciada: revisa CROSSFADER / MASTER / STANDBY');
+        } else if (!autoplay) {
+          window.setStatus && window.setStatus(name + ' → Player ' + key + ' · listo');
+        }
+        // Con autoplay, onDeckPlay() ya escribió «▶ … · pinchados N».
+      }).catch((err) => {
+        console.error('[hammer] Library.loadTo: fallo inesperado al cargar «' + name + '»', err);
+        window.setStatus && window.setStatus('⚠ No se pudo cargar «' + name + '» en Player ' + key);
+      });
+    }
     return true;
   },
 
-  loadSelected(deckId) {
+  // Punto de entrada único para un soltar desde una fila. Usa la referencia
+  // guardada en dragstart (la tabla se repinta al cargar, pero ya terminó el
+  // arrastre) y delega en loadTo(), que avisa si la pista está sin enlazar.
+  // autoplay = true al soltar sobre un deck (o al usar «▶→ A/B»).
+  dropTo(id, deckId, autoplay = true) {
+    let track = null;
+    if (id && typeof id === 'object') {
+      // Llamada directa con el objeto pista (p. ej. desde la LCD).
+      track = id;
+    } else {
+      const key = String(id == null || id === '' ? (this._dragId || '') : id);
+      // _dragTrack es la referencia viva capturada en dragstart: sobrevive a
+      // cualquier repintado de la tabla. Si no está, buscamos por id.
+      track = (this._dragTrack && String(this._dragTrack.id) === key)
+        ? this._dragTrack
+        : this.tracks.find(t => String(t.id) === key) || null;
+    }
+    if (this._clearDrag) this._clearDrag();
+    return this.loadTo(track, deckId, !!autoplay);
+  },
+
+  loadSelected(deckId, autoplay = true) {
     if (!this.sel) {
       window.setStatus && window.setStatus('Selecciona una pista primero');
-      return;
+      return false;
     }
-    this.loadTo(this.sel, deckId);
+    return this.loadTo(this.sel, deckId, !!autoplay);
   },
 
   loadAdjacent(deckId, dir) {
@@ -877,7 +1258,7 @@ const Library = {
     let next = idx + dir;
     if (next < 0) next = pool.length - 1;
     if (next >= pool.length) next = 0;
-    if (pool[next]) this.loadTo(pool[next], deckId);
+    if (pool[next]) this.loadTo(pool[next], deckId, true);
   },
 
   nextUnplayed(excludeId) {
@@ -919,7 +1300,55 @@ const Library = {
     try { localStorage.removeItem(this.playedKey); } catch (_) { /* ignore */ }
     this._writeStore();
     this.render();
-    window.setStatus && window.setStatus('Marcas ✓ reiniciadas');
+    window.setStatus && window.setStatus('Marcas ✓ reiniciadas · el reloj de sesión sigue');
+  },
+
+  // «Vaciar biblioteca» ≠ «Reiniciar ✓» ≠ «↺ sesión». Sólo limpia los
+  // metadatos de la app para empezar de cero: los MP3 del disco no se tocan,
+  // hammer:master y hammer:skin se conservan y Session no se modifica.
+  clearLibrary() {
+    const n = this.tracks.length;
+    const custom = this.folders.filter(f => String(f.id) !== 'default').length;
+    if (!n && !custom) {
+      window.setStatus && window.setStatus('La biblioteca ya está vacía');
+      return false;
+    }
+    const msg = '¿Vaciar la biblioteca?\n\n' +
+      'Se quitarán ' + n + ' pista(s) y ' + custom + ' carpeta(s) personalizada(s) de la app.\n' +
+      'Tus archivos de audio en el disco NO se borran.\n' +
+      'El reloj de sesión y las marcas ✓ no se reinician con esta acción.';
+    if (typeof window.confirm === 'function' && !window.confirm(msg)) {
+      window.setStatus && window.setStatus('Limpieza cancelada · biblioteca intacta');
+      return false;
+    }
+
+    // AUTO se apaga: su cola venía de la biblioteca que acabamos de vaciar.
+    if (this.autoMode) this.setAuto(false);
+
+    // Expulsar primero para no dejar sonando ni con src una pista que se va.
+    ['A', 'B'].forEach(k => {
+      const d = window.decks && window.decks[k];
+      if (d && typeof d.eject === 'function') d.eject();
+    });
+    // Revocar las URLs blob: de esta sesión (jamás se escribieron en localStorage).
+    this.tracks.forEach(t => {
+      if (t.url && String(t.url).indexOf('blob:') === 0) {
+        try { URL.revokeObjectURL(t.url); } catch (_) { /* ignore */ }
+      }
+    });
+
+    this.tracks = [];
+    this.folders = [{ id: 'default', name: 'Default' }];
+    this.activeFolder = 'all';
+    this.sel = null;
+    this._ctxTrack = null;
+    this._assignTarget = '';
+    try { localStorage.removeItem(this.playedKey); } catch (_) { /* ignore */ }
+    try { localStorage.removeItem(this.libKey); } catch (_) { /* ignore */ }
+    this.render();
+    this._renderRecordcaseList();
+    window.setStatus && window.setStatus('Biblioteca vacía · los archivos del disco siguen intactos');
+    return true;
   },
 
   setHide(v) {

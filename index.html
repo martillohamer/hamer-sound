@@ -78,7 +78,7 @@
                 <span class="seg7-re" id="player-a-remaining">-00:00.0</span>
               </div>
             </div>
-            <div class="lcd-msg" id="player-a-msg">NOT LOADED! Invalid floating point operation</div>
+            <div class="lcd-msg" id="player-a-msg">-- sin pista · arrastra un tema aquí o pulsa la LCD --</div>
           </div>
 
           <div class="deck-detail" id="player-a-detail" aria-label="Detalles de la pista A">
@@ -198,7 +198,7 @@
                 <span class="seg7-re" id="player-b-remaining">-00:00.0</span>
               </div>
             </div>
-            <div class="lcd-msg" id="player-b-msg">NOT LOADED! Invalid floating point operation</div>
+            <div class="lcd-msg" id="player-b-msg">-- sin pista · arrastra un tema aquí o pulsa la LCD --</div>
           </div>
 
           <div class="deck-detail" id="player-b-detail" aria-label="Detalles de la pista B">
@@ -385,27 +385,66 @@
         <div class="mixer-grid">
           <div class="mix-channel">
             <span class="chan-badge">A</span>
-            <input type="range" class="channel-fader" id="vol-a" min="0" max="1" step=".01" value=".8" aria-label="Volumen A">
+            <div class="fader-row">
+              <div class="fader-scale" aria-hidden="true">
+                <span class="scale-label scale-max">max</span>
+                <div class="scale-body">
+                  <span class="scale-step scale-major"><b>10</b><i></i></span>
+                  <span class="scale-step"><b>9</b><i></i></span>
+                  <span class="scale-step"><b>8</b><i></i></span>
+                  <span class="scale-step"><b>7</b><i></i></span>
+                  <span class="scale-step"><b>6</b><i></i></span>
+                  <span class="scale-step scale-major"><b>5</b><i></i></span>
+                  <span class="scale-step"><b>4</b><i></i></span>
+                  <span class="scale-step"><b>3</b><i></i></span>
+                  <span class="scale-step"><b>2</b><i></i></span>
+                  <span class="scale-step"><b>1</b><i></i></span>
+                  <span class="scale-step scale-major"><b>0</b><i></i></span>
+                </div>
+                <span class="scale-label scale-min">min</span>
+              </div>
+              <input type="range" class="channel-fader" id="vol-a" min="0" max="1" step=".01" value=".8" aria-label="Volumen A">
+            </div>
             <span class="chan-caption">vol A</span>
           </div>
 
           <div class="mix-vu">
-            <canvas id="vu-meter" width="90" height="110" aria-label="Vúmetro máster"></canvas>
+            <canvas id="vu-meter" width="90" height="150" aria-label="Vúmetro máster"></canvas>
             <span class="chan-caption">master VU</span>
           </div>
 
           <div class="mix-channel">
             <span class="chan-badge">B</span>
-            <input type="range" class="channel-fader" id="vol-b" min="0" max="1" step=".01" value=".8" aria-label="Volumen B">
+            <div class="fader-row fader-row--right">
+              <div class="fader-scale" aria-hidden="true">
+                <span class="scale-label scale-max">max</span>
+                <div class="scale-body">
+                  <span class="scale-step scale-major"><b>10</b><i></i></span>
+                  <span class="scale-step"><b>9</b><i></i></span>
+                  <span class="scale-step"><b>8</b><i></i></span>
+                  <span class="scale-step"><b>7</b><i></i></span>
+                  <span class="scale-step"><b>6</b><i></i></span>
+                  <span class="scale-step scale-major"><b>5</b><i></i></span>
+                  <span class="scale-step"><b>4</b><i></i></span>
+                  <span class="scale-step"><b>3</b><i></i></span>
+                  <span class="scale-step"><b>2</b><i></i></span>
+                  <span class="scale-step"><b>1</b><i></i></span>
+                  <span class="scale-step scale-major"><b>0</b><i></i></span>
+                </div>
+                <span class="scale-label scale-min">min</span>
+              </div>
+              <input type="range" class="channel-fader" id="vol-b" min="0" max="1" step=".01" value=".8" aria-label="Volumen B">
+            </div>
             <span class="chan-caption">vol B</span>
           </div>
         </div>
 
         <div class="crossfade-row">
+          <output class="xfade-val" id="cf-value-a" for="crossfader" title="Porcentaje del lado A">50%</output>
           <span class="xfade-end">A</span>
           <input type="range" id="crossfader" min="-1" max="1" step=".01" value="0" aria-label="Crossfader">
           <span class="xfade-end">B</span>
-          <output id="cf-value" for="crossfader">50%</output>
+          <output class="xfade-val" id="cf-value" for="crossfader" title="Porcentaje del lado B">50%</output>
         </div>
 
         <div class="mixer-foot">
@@ -425,7 +464,7 @@
           <div class="folder-chips" id="folder-chips" aria-label="Recordcases"></div>
           <button type="button" class="lib-btn" id="btn-folder-new">+ carpeta</button>
           <button type="button" class="lib-btn" id="btn-folder-edit">edit recordcase</button>
-          <span class="lib-hint">Doble clic = cargar · Clic derecho = menú · Hover = Play A/B · Arrastra a un player o a una carpeta</span>
+          <span class="lib-hint">Doble clic = cargar · Clic derecho = menú · Hover = Play A/B · Arrastra a un player (suelta = play) o a una carpeta · Borde = auto-scroll</span>
         </div>
 
         <div class="lib-table">
@@ -449,8 +488,10 @@
           <button type="button" id="btn-add" class="btn-add">+ Añadir MP3</button>
           <input type="file" id="file-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.opus" multiple hidden>
           <input type="text" id="lib-filter" placeholder="Filtrar artista/título" aria-label="Filtrar pistas">
-          <button type="button" id="btn-load-a" title="Cargar selección en Player A">→ A</button>
-          <button type="button" id="btn-load-b" title="Cargar selección en Player B">→ B</button>
+          <button type="button" id="btn-load-a" title="Cargar la selección en Player A y reproducir">→ A</button>
+          <button type="button" id="btn-load-b" title="Cargar la selección en Player B y reproducir">→ B</button>
+          <button type="button" id="btn-playload-a" class="btn-loadplay" title="Cargar la selección en Player A y reproducir">▶→ A</button>
+          <button type="button" id="btn-playload-b" class="btn-loadplay" title="Cargar la selección en Player B y reproducir">▶→ B</button>
           <select id="folder-assign" aria-label="Elegir carpeta de destino">
             <option value="">Mover a carpeta…</option>
           </select>
@@ -458,7 +499,8 @@
           <button type="button" id="btn-auto">AUTO</button>
           <label class="check"><input type="checkbox" id="chk-shuffle">SHFL</label>
           <label class="check"><input type="checkbox" id="chk-hide-hidden">Ocultar ✓</label>
-          <button type="button" id="btn-reset">Reiniciar ✓</button>
+          <button type="button" id="btn-reset" title="Quitar todas las marcas ✓. No reinicia el reloj de sesión ni borra pistas.">Reiniciar ✓</button>
+          <button type="button" id="btn-clear-library" class="btn-danger" title="Vaciar la biblioteca y las recordcases de la app. NO borra los MP3 del disco.">Vaciar biblioteca</button>
           <button type="button" id="btn-clean-titles" title="Quita guiones bajos y códigos de descarga del título/artista. No toca el archivo ni el re-enlace.">Limpiar títulos</button>
         </div>
       </section>
@@ -496,12 +538,12 @@
     <h2>dj. hammer · Silver Edition</h2>
     <p>Mezclador de dos decks con crossfader de potencia constante, modo AUTO y biblioteca local.</p>
     <p>Atajos: arrastra MP3 a la app, Ctrl+V para pegar archivos, doble clic en una fila para cargarla.</p>
-    <p>Asignación rápida: clic derecho en una pista abre el menú para cargar o cargar y reproducir en A/B; al pasar el ratón aparecen los botones Play A / Play B.</p>
+    <p>Asignación rápida: todas las cargas siguen el mismo camino y suenan igual. Doble clic en una fila, «→ A/B» y «▶→ A/B», los botones Play A/B del hover, el menú derecho y soltar una fila sobre un player cargan y reproducen. Si acercas el puntero al borde superior/inferior durante el arrastre, la página hace auto-scroll.</p>
     <p>Recordcases: crea carpetas, arrastra una fila a una carpeta o usa «Mover a recordcase». La cabecera muestra la hora, el tiempo de sesión y los temas pinchados.</p>
     <p>FX: filtro LP/HP, eco y frenado/arranque de plato por deck (Web Audio). BRAKE/START se bloquean con AUTO activo para no romper el crossfade.</p>
     <p>Cabina: cada deck tiene TRIM (±12 dB) y EQ de 3 bandas LOW/MID/HIGH (±12 dB). Arrastra o usa la rueda; doble clic en un fader lo pone a 0 dB, y «0 dB» / «EQ 0» reinician al instante. El TRIM se guarda por pista.</p>
     <p>«Limpiar títulos» quita guiones bajos y códigos de descarga de título/artista sin tocar el archivo ni su re-enlace. También está en el menú derecho de cada pista.</p>
-    <p>Persistencia: se guardan títulos, marcas y carpetas, nunca las URLs <code>blob:</code>. Tras recargar, vuelve a añadir los MP3 para reconectar el audio.</p>
+    <p>Persistencia: se guardan títulos, marcas y carpetas, nunca las URLs <code>blob:</code>. Tras recargar, una pista de otra sesión avisa de que necesita re-enlazarse: vuelve a añadir el MP3 o arrástralo al deck. «Reiniciar ✓» borra marcas, «↺ sesión» reinicia reloj/contador y «Vaciar biblioteca» limpia la biblioteca sin borrar archivos del disco.</p>
     <p>Aspecto: el selector <b>SKIN</b> cambia la piel (plata, azul, rojo, negro y Barça) y se recuerda en <code>hammer:skin</code>. Sólo toca variables CSS: el audio y los vúmetros no cambian.</p>
     <p>Jog y mandos: arrastra el círculo JOG de cada deck (en círculo por el borde o en horizontal por el centro) o usa la rueda para buscar posición; doble clic vuelve al inicio. Los mandos junto a CUT giran con arrastre o rueda y doble clic los abre a 12 kHz.</p>
     <p>MIDI: el estado <b>MIDI: …</b> indica si Web MIDI está disponible y si hay controlador. La plantilla para Numark NV II está en <b>cfg → Mapeo</b>; sin hardware no se fuerza ninguna conexión.</p>
@@ -510,7 +552,8 @@
 
   <dialog id="dlg-recordcase" class="metal-dialog">
     <h2>Recordcases</h2>
-    <p>Crea, renombra o borra grupos. Las pistas se asignan arrastrándolas a una carpeta o desde el menú contextual.</p>
+    <p>Crea, renombra o borra grupos. «Todas» y «Default» son carpetas base y no se pueden borrar; el resto pide confirmación y sus pistas pasan a Default (los archivos no se tocan).</p>
+    <p>Arrastra una pista a una chip para asignarla, o pulsa «edit recordcase» para renombrar/borrar. El clic derecho sobre una carpeta o sobre la zona de biblioteca abre el menú de la app: crear carpeta (pregunta el nombre), borrar la carpeta elegida o vaciar la biblioteca. Las carpetas base («Todas» y «Default») sólo ofrecen crear.</p>
     <div id="rc-list" class="rc-list"></div>
     <div class="rc-new">
       <input type="text" id="rc-new-name" placeholder="Nombre de la carpeta" aria-label="Nueva carpeta" maxlength="40">
@@ -531,6 +574,17 @@
     <div class="ctx-divider" aria-hidden="true"></div>
     <div class="ctx-folders-title">MOVER A RECORDCASE</div>
     <div id="ctx-folders" class="ctx-folders"></div>
+  </div>
+
+  <!-- Menú contextual de recordcases: clic derecho sobre una chip o sobre la
+       zona de biblioteca. Se posiciona junto al cursor desde library.js. -->
+  <div class="track-context-menu folder-context-menu" id="folder-ctx-menu" role="menu" aria-label="Gestionar recordcases" aria-hidden="true">
+    <div class="ctx-folders-title" id="folder-ctx-title">RECORDCASES</div>
+    <button type="button" role="menuitem" data-folder-ctx="new">+ Crear carpeta…</button>
+    <div class="ctx-divider" aria-hidden="true"></div>
+    <button type="button" role="menuitem" data-folder-ctx="delete" class="ctx-danger" hidden>Borrar carpeta…</button>
+    <div class="ctx-divider" aria-hidden="true"></div>
+    <button type="button" role="menuitem" data-folder-ctx="clear" class="ctx-danger">Vaciar biblioteca…</button>
   </div>
 
   <script src="js/seg7.js" defer></script>

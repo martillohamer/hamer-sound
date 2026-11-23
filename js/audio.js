@@ -88,8 +88,14 @@ function setXf(v, opts = {}) {
   const cf = $('#crossfader');
   if (cf && !opts.fromSlider) cf.value = String(v);
 
-  const out = $('#cf-value');
-  if (out) out.textContent = Math.round(((v + 1) / 2) * 100) + '%';
+  // Dos lecturas complementarias: la de B se calcula igual que siempre y la
+  // de A es su complemento a 100, así ambos cuadran con la posición del fader
+  // (arrastre, rueda, MIDI o AUTO, todos pasan por setXf).
+  const bPct = Math.round(((v + 1) / 2) * 100);
+  const outB = $('#cf-value');
+  if (outB) outB.textContent = bPct + '%';
+  const outA = $('#cf-value-a');
+  if (outA) outA.textContent = (100 - bPct) + '%';
 
   if (opts.user && window.AutoMode && typeof window.AutoMode.cancelByUser === 'function') {
     window.AutoMode.cancelByUser();

@@ -27,7 +27,7 @@ const StateMachine = {
   error(deck, reason) {
     if (!deck) return;
     deck.setState('ERROR');
-    deck.showMessage('NOT LOADED! ' + (reason || ''));
+    deck.showMessage('ERROR: ' + (reason || 'no se pudo cargar'));
   }
 };
 
@@ -364,13 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
 function wireWheel(input, step) {
   if (!input) return;
   input.addEventListener('wheel', (e) => {
-    e.preventDefault();
+    const current = Number(input.value) || 0;
     const dir = e.deltaY > 0 ? -1 : 1;
     const min = Number(input.min);
     const max = Number(input.max);
-    let v = (Number(input.value) || 0) + dir * step;
+    let v = current + dir * step;
     if (Number.isFinite(min)) v = Math.max(min, v);
     if (Number.isFinite(max)) v = Math.min(max, v);
+    // En el tope del recorrido no consumimos la rueda: así se puede seguir
+    // desplazando la página/panel con el ratón sobre un fader.
+    if (v === current) return;
+    e.preventDefault();
     input.value = String(v);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }, { passive: false });
@@ -560,19 +564,47 @@ function drawMasterVU() {
     const target = Math.min(1, a + b) * m;
     // Ataque rápido, caída suave: respuesta fluida sin saltos bruscos.
     lv += (target - lv) * (target > lv ? 0.6 : 0.12);
-    const bars = 12;
-    const gap = 3;
-    const bh = (h - gap * (bars + 1)) / bars;
-    for (let i = 0; i < bars; i++) {
+    // Sólo cambia el dibujo: el cálculo de lv (suma de A+B × master) y la
+    // posición del analizador (pre-crossfader) quedan intactos. Estilo PCDJ:
+    // dos columnas de segmentos horizontales definidos, verdes en la zona
+    // normal/media y rojos en los picos, con la ranura central marcada.
+    const bars = 16;
+    const gap = 2;
+    const padX = 9;
+    const padY = 7;
+    const bh = (h - padY * 2 - gap * (bars - 1)) / bars;
+    const baseY = h - padY - bh;
+    const cx = Math.round(w / 2);
+    const colW = cx - 3 - padX;   // columnas simétricas a cada lado de la ranura
+
+    g.fillStyle = '#080d0f';
+    g.fillRect(padX - 4, padY - 3, w - (padX - 4) * 2, h - (padY - 3) * 2);
+    g.fillStyle = 'rgba(214, 226, 232, .18)';
+    g.fillRect(padX - 4, padY - 3, 1, h - (padY - 3) * 2);
+    g.fillRect(w - padX + 3, padY - 3, 1, h - (padY - 3) * 2);
+
+    const segment = (x, i) => {
+      const rgb = i >= bars - 3 ? '255,72,72' : '57,255,106';
+      const y = baseY - i * (bh + gap);
       const lit = lv >= (i + 1) / bars;
-      const y = h - gap - i * (bh + gap);
-      g.fillStyle = i >= bars - 2
-        ? (lit ? 'rgba(255,42,42,.95)' : 'rgba(255,42,42,.10)')
-        : i >= bars - 4
-          ? (lit ? 'rgba(238,238,51,.95)' : 'rgba(238,238,51,.10)')
-          : (lit ? 'rgba(43,209,58,.95)' : 'rgba(43,209,58,.10)');
-      g.fillRect(6, y, w - 12, bh);
+      g.shadowBlur = lit ? 7 : 0;
+      g.shadowColor = 'rgba(' + rgb + ',.85)';
+      g.fillStyle = lit ? 'rgba(' + rgb + ',.96)' : 'rgba(' + rgb + ',.09)';
+      g.fillRect(x, y, colW, bh);
+      g.shadowBlur = 0;
+    };
+    for (let i = 0; i < bars; i++) {
+      segment(padX, i);
+      segment(cx + 3, i);
     }
+
+    // Detalle central: ranura oscura y dos muescas a media altura.
+    g.fillStyle = '#05090b';
+    g.fillRect(cx - 2, padY - 3, 4, h - (padY - 3) * 2);
+    g.fillStyle = 'rgba(214, 226, 232, .5)';
+    const mid = Math.round(h / 2);
+    g.fillRect(cx - 5, mid - 1, 3, 1);
+    g.fillRect(cx + 2, mid - 1, 3, 1);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -673,7 +705,7 @@ function wireInfoButtons() {
       const id = player.id === 'player-b' ? 'B' : 'A';
       const deck = decks[id];
       if (!deck) return;
-      deck.showMessage(deck.info || 'NOT LOADED! Invalid floating point operation');
+      deck.showMessage(deck.info || '-- sin pista · arrastra un tema aquí o pulsa la LCD --');
     });
   });
 }

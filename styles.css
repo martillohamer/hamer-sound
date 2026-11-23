@@ -64,15 +64,263 @@
   --accent: #9ad3ac; --accent-2: #3f7d55; --accent-3: #8e9aa3; --accent-ink: #06120a;
   --jog-track: #05080a;
 }
-/* Exclusiva Barça: azulgrana con acentos granate y dorado. */
+/* Barça azulgrana: cabina partida en dos mitades, GRANA a la izquierda
+   (PLAYER A) y AZUL a la derecha (PLAYER B), con costura suave y tonos
+   uniformes. Sigue siendo sólo CSS: el grafo de audio no lee data-skin y
+   --led-* / --vu-off NO se redefinen (LEDs y vúmetros intactos). */
 [data-skin="barca"] {
-  --glow: #122a5e; --surface-1: #1b2743; --surface-2: #111a30; --surface-3: #080d1a;
-  --panel: #141f38; --panel-hi: #23345a; --grafito: #101a30;
-  --plata: #dbe6f7; --aluminio: #eef3fc; --gris-met: #8498bd;
-  --lcd: #b6c8e2; --lcd-ink: #0c1c3a;
-  --fader-knob: linear-gradient(180deg, #fff1c4 0%, #d8b45c 55%, #8a6820 100%);
-  --accent: #ffcf5a; --accent-2: #b8862a; --accent-3: #e0245e; --accent-ink: #241500;
-  --jog-track: #070d1c;
+  --bc-red: #9c0b3f;
+  --bc-red-dark: #3a0019;
+  --bc-blue: #0b4f9e;
+  --bc-blue-dark: #08285a;
+  --bc-blend: #74509c;        /* mezcla grana+azul para controles compartidos */
+  /* Un único degradado para TODOS los paneles compartidos: nada de franjas
+     alternas ni cortes duros; grana a la izquierda, azul a la derecha. */
+  --bc-panel: linear-gradient(90deg, #3a0019 0%, #2a1442 50%, #08285a 100%);
+  --bc-neon-red: #ff4d86;
+  --bc-neon-blue: #37c6f5;
+  --bc-neon-lime: #9fe85a;
+  --bc-neon-yellow: #ffd75e;
+
+  --glow: #1a0b26;
+  --surface-1: #2a1233; --surface-2: #140a24; --surface-3: #080513;
+  --panel: #1e1030; --panel-hi: #351a4b; --grafito: #150c26;
+  --plata: #eef0f8; --aluminio: #f7f8fd; --gris-met: #a49bb5;
+  --lcd: #d6d2e8; --lcd-ink: #12102a;
+  --fader-knob: linear-gradient(180deg, #fff0f5 0%, #cbb6e0 50%, #6b4b93 100%);
+  --accent: var(--bc-blend); --accent-2: #5c3b82; --accent-3: var(--bc-neon-red);
+  --accent-ink: #160a22;
+  --jog-track: #0b0718;
+}
+
+/* Reparto 50/50 en el fondo y en cada panel largo de la cabina. */
+[data-skin="barca"] body {
+  background:
+    linear-gradient(90deg, rgba(156, 11, 63, .26) 0%, rgba(116, 80, 156, .14) 50%, rgba(11, 79, 158, .26) 100%),
+    radial-gradient(1100px 520px at 50% -12%, var(--glow) 0%, transparent 62%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .014) 0 1px, transparent 1px 3px),
+    var(--black);
+}
+[data-skin="barca"] .app {
+  border-color: #0c0718;
+  background:
+    linear-gradient(90deg, rgba(156, 11, 63, .34) 0%, rgba(116, 80, 156, .26) 50%, rgba(11, 79, 158, .34) 100%),
+    linear-gradient(180deg, var(--surface-1), var(--surface-2) 55%, var(--surface-3));
+  box-shadow: 0 20px 55px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .1);
+}
+[data-skin="barca"] .top-bar,
+[data-skin="barca"] .fx-rack,
+[data-skin="barca"] .mixer,
+[data-skin="barca"] .crossfade-row,
+[data-skin="barca"] .lib-header,
+[data-skin="barca"] .lib-controls,
+[data-skin="barca"] .status-bar {
+  border-color: #0d0718;
+  background: var(--bc-panel);
+}
+/* Un único tono sólido en las celdas: aplicar el degradado a cada TH lo
+   repetiría seis veces (franjas), y dejarlo transparente dejaría ver las filas
+   detrás porque los TH son sticky. */
+[data-skin="barca"] .lib-table thead th { background: #2a1442; }
+
+/* Cada deck es una mitad completa: GRANA a la izquierda (A), AZUL a la
+   derecha (B). --accent se redefine por deck para jog, diales y lecturas,
+   sin tocar ganancias, crossfader ni vúmetros. */
+[data-skin="barca"] #player-a {
+  --accent: var(--bc-neon-red); --accent-2: #a0124a; --accent-3: var(--bc-neon-blue);
+  --accent-ink: #2a0010; --jog-track: #1c0210;
+  --fader-knob: linear-gradient(180deg, #fff0f5 0%, #ffb3cc 50%, #9c0b3f 100%);
+  background: linear-gradient(165deg, #5d062b 0%, #3d041c 48%, #280211 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 77, 134, .2), inset 0 1px 0 rgba(255, 255, 255, .1), 0 4px 14px rgba(0, 0, 0, .5);
+}
+[data-skin="barca"] #player-b {
+  --accent: var(--bc-neon-blue); --accent-2: #0e6db4; --accent-3: var(--bc-neon-red);
+  --accent-ink: #04182b; --jog-track: #04122c;
+  --fader-knob: linear-gradient(180deg, #f2fbff 0%, #a7dcf5 50%, #16639f 100%);
+  background: linear-gradient(165deg, #073a75 0%, #052750 48%, #041731 100%);
+  box-shadow: inset 0 0 0 1px rgba(55, 198, 245, .2), inset 0 1px 0 rgba(255, 255, 255, .1), 0 4px 14px rgba(0, 0, 0, .5);
+}
+[data-skin="barca"] .player .deck-detail,
+[data-skin="barca"] .player .deck-eq,
+[data-skin="barca"] .player .jog-block {
+  border-color: rgba(255, 77, 134, .22);
+  background: linear-gradient(180deg, #2a0518, #1a0310);
+}
+[data-skin="barca"] #player-b .deck-detail,
+[data-skin="barca"] #player-b .deck-eq,
+[data-skin="barca"] #player-b .jog-block {
+  border-color: rgba(55, 198, 245, .24);
+  background: linear-gradient(180deg, #061a38, #041026);
+}
+[data-skin="barca"] .player .pitch-value,
+[data-skin="barca"] .player .eq-val,
+[data-skin="barca"] .player .jog-readout {
+  border-color: rgba(255, 77, 134, .34);
+  box-shadow: inset 0 0 8px rgba(255, 77, 134, .1);
+}
+[data-skin="barca"] #player-b .pitch-value,
+[data-skin="barca"] #player-b .eq-val,
+[data-skin="barca"] #player-b .jog-readout {
+  border-color: rgba(55, 198, 245, .36);
+  box-shadow: inset 0 0 8px rgba(55, 198, 245, .1);
+}
+[data-skin="barca"] .player-vu { border-color: rgba(255, 77, 134, .34); }
+[data-skin="barca"] #player-b .player-vu { border-color: rgba(55, 198, 245, .36); }
+
+/* LCD teñida por mitad, con tinta oscura para no perder lectura. */
+[data-skin="barca"] #player-a .lcd {
+  background: linear-gradient(180deg, #fbe3ec 0%, #efc4d6 100%);
+  color: #3a0018;
+}
+[data-skin="barca"] #player-b .lcd {
+  background: linear-gradient(180deg, #e2f2ff 0%, #c4dcf2 100%);
+  color: #082b4a;
+}
+[data-skin="barca"] .lcd-msg { color: #6b0b33; }
+[data-skin="barca"] #player-b .lcd-msg { color: #0d3c66; }
+
+/* Transporte: neón refinado en hover/active, sin halos chillones. */
+[data-skin="barca"] .transport button {
+  color: #fff0f6;
+  border-color: rgba(255, 77, 134, .3);
+  background: linear-gradient(180deg, #5e0a2e, #350318);
+}
+[data-skin="barca"] .transport button:hover {
+  color: #fff;
+  border-color: var(--bc-neon-red);
+  background: linear-gradient(180deg, #8a1244, #520727);
+  box-shadow: 0 0 10px rgba(255, 77, 134, .4), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+[data-skin="barca"] .transport button:active {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .75);
+}
+[data-skin="barca"] #player-b .transport button {
+  color: #eaf7ff;
+  border-color: rgba(55, 198, 245, .32);
+  background: linear-gradient(180deg, #0c3563, #061c3b);
+}
+[data-skin="barca"] #player-b .transport button:hover {
+  border-color: var(--bc-neon-blue);
+  background: linear-gradient(180deg, #13538a, #0a2b52);
+  box-shadow: 0 0 10px rgba(55, 198, 245, .4), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+[data-skin="barca"] .transport .btn-play { color: var(--bc-neon-lime); }
+[data-skin="barca"] .transport .btn-play.active {
+  color: #12210a;
+  background: linear-gradient(180deg, var(--bc-neon-lime), #69b43c);
+  box-shadow: 0 0 12px rgba(159, 232, 90, .45);
+}
+[data-skin="barca"] .transport .btn-cue { color: var(--bc-neon-yellow); }
+[data-skin="barca"] .transport .btn-cue.active {
+  color: #2a2104;
+  background: linear-gradient(180deg, var(--bc-neon-yellow), #c9a436);
+  box-shadow: 0 0 12px rgba(255, 215, 94, .45);
+}
+[data-skin="barca"] .transport .btn-eject {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .25);
+  background: linear-gradient(180deg, #a35a9a, #5c2d78);
+}
+
+/* Banco FX: grana a la izquierda, azul a la derecha, con active states neón. */
+[data-skin="barca"] .fx-channel {
+  border-color: rgba(255, 77, 134, .24);
+  background: linear-gradient(180deg, #4d0626, #2b0215);
+}
+[data-skin="barca"] .fx-b {
+  border-color: rgba(55, 198, 245, .26);
+  background: linear-gradient(180deg, #082e5e, #041731);
+}
+[data-skin="barca"] .fx-a .fx-badge { color: var(--bc-neon-red); border-color: var(--bc-neon-red); box-shadow: 0 0 9px rgba(255, 77, 134, .35); }
+[data-skin="barca"] .fx-b .fx-badge { color: var(--bc-neon-blue); border-color: var(--bc-neon-blue); box-shadow: 0 0 9px rgba(55, 198, 245, .35); }
+[data-skin="barca"] .dial { border-color: var(--bc-neon-red); box-shadow: inset 0 0 6px rgba(0, 0, 0, .9), 0 0 9px rgba(255, 77, 134, .3); }
+[data-skin="barca"] .dial-pointer { background: var(--bc-neon-red); box-shadow: 0 0 5px var(--bc-neon-red); }
+[data-skin="barca"] .fx-b .dial { border-color: var(--bc-neon-blue); box-shadow: inset 0 0 6px rgba(0, 0, 0, .9), 0 0 9px rgba(55, 198, 245, .3); }
+[data-skin="barca"] .fx-b .dial-pointer { background: var(--bc-neon-blue); box-shadow: 0 0 5px var(--bc-neon-blue); }
+[data-skin="barca"] .fx-seg button:hover,
+[data-skin="barca"] .fx-toggle:hover,
+[data-skin="barca"] .fx-motion button:hover:not(:disabled) {
+  border-color: var(--bc-neon-red);
+  box-shadow: 0 0 9px rgba(255, 77, 134, .35);
+}
+[data-skin="barca"] .fx-b .fx-seg button:hover,
+[data-skin="barca"] .fx-b .fx-toggle:hover,
+[data-skin="barca"] .fx-b .fx-motion button:hover:not(:disabled) {
+  border-color: var(--bc-neon-blue);
+  box-shadow: 0 0 9px rgba(55, 198, 245, .35);
+}
+[data-skin="barca"] .fx-a .fx-seg button.active,
+[data-skin="barca"] .fx-toggle[aria-pressed="true"] {
+  color: #2a0010;
+  background: linear-gradient(180deg, var(--bc-neon-red), #b3164f);
+  box-shadow: 0 0 11px rgba(255, 77, 134, .45);
+}
+[data-skin="barca"] .fx-b .fx-seg button.active,
+[data-skin="barca"] .fx-b .fx-toggle[aria-pressed="true"] {
+  color: #04182b;
+  background: linear-gradient(180deg, var(--bc-neon-blue), #1174b6);
+  box-shadow: 0 0 11px rgba(55, 198, 245, .45);
+}
+
+/* Biblioteca y controles compartidos: un único acento mezcla (grana→azul)
+   para que no haya cortes chillones; A/B conservan su color de mitad. */
+[data-skin="barca"] .lib-table thead th { color: #f2eef8; }
+[data-skin="barca"] .lib-table tbody tr:hover { background: rgba(116, 80, 156, .32); }
+[data-skin="barca"] .lib-table tbody tr.sel { background: rgba(116, 80, 156, .58); }
+[data-skin="barca"] .chip:hover,
+[data-skin="barca"] .top-btn:hover,
+[data-skin="barca"] .lib-controls button:hover {
+  border-color: rgba(255, 255, 255, .45);
+  box-shadow: 0 0 9px rgba(116, 80, 156, .35);
+}
+[data-skin="barca"] .chip.active,
+[data-skin="barca"] .top-btn.active,
+[data-skin="barca"] .lib-controls button.active {
+  color: #fff;
+  background: linear-gradient(90deg, var(--bc-red), var(--bc-blue));
+  box-shadow: 0 0 11px rgba(116, 80, 156, .4);
+}
+[data-skin="barca"] .quick-btn { border-color: rgba(255, 77, 134, .4); }
+[data-skin="barca"] .quick-a { color: var(--bc-neon-red); }
+[data-skin="barca"] .quick-b { color: var(--bc-neon-blue); }
+[data-skin="barca"] .quick-a:hover { box-shadow: 0 0 9px rgba(255, 77, 134, .4); }
+[data-skin="barca"] .quick-b:hover { box-shadow: 0 0 9px rgba(55, 198, 245, .4); }
+[data-skin="barca"] .lib-controls .btn-loadplay {
+  color: #fff0f6; border-color: var(--bc-neon-red);
+  background: linear-gradient(180deg, #8a1244, #520727);
+  box-shadow: 0 0 9px rgba(255, 77, 134, .3);
+}
+[data-skin="barca"] .lib-controls #btn-playload-b {
+  color: #eaf7ff; border-color: var(--bc-neon-blue);
+  background: linear-gradient(180deg, #13538a, #0a2b52);
+  box-shadow: 0 0 9px rgba(55, 198, 245, .3);
+}
+[data-skin="barca"] .lib-controls #btn-playload-b:hover { border-color: var(--bc-neon-blue); box-shadow: 0 0 12px rgba(55, 198, 245, .45); }
+[data-skin="barca"] .lib-controls #btn-add {
+  color: #eaffea;
+  border-color: #0a5c1c;
+  background: linear-gradient(180deg, #2aa555, #116c34);
+  box-shadow: 0 0 9px rgba(43, 209, 58, .25);
+}
+
+/* Transiciones limpias al cambiar de piel (respetando movimiento reducido). */
+[data-skin="barca"] .app,
+[data-skin="barca"] .top-bar,
+[data-skin="barca"] .player,
+[data-skin="barca"] .fx-channel,
+[data-skin="barca"] .mixer,
+[data-skin="barca"] .library,
+[data-skin="barca"] .status-bar,
+[data-skin="barca"] .chip,
+[data-skin="barca"] button {
+  transition: background .28s ease, box-shadow .28s ease, border-color .28s ease, color .18s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-skin="barca"] .app, [data-skin="barca"] .top-bar, [data-skin="barca"] .player,
+  [data-skin="barca"] .fx-channel, [data-skin="barca"] .mixer, [data-skin="barca"] .library,
+  [data-skin="barca"] .status-bar, [data-skin="barca"] .chip, [data-skin="barca"] button {
+    transition: none;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -241,6 +489,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 }
 
 .player {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 26px 78px;
   grid-template-rows: auto auto auto auto auto auto;
@@ -656,8 +905,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 4px 12px rgba(0, 0, 0, .4);
 }
 
-.section-label { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; color: var(--plata); font-size: 10px; font-weight: 700; letter-spacing: .18em; }
-.section-label i { flex: 1; height: 1px; background: linear-gradient(90deg, #4b555c, transparent); }
+.section-label { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; color: var(--plata); font-size: 10px; font-weight: 700; letter-spacing: .18em; text-align: center; }
+.section-label > span { flex: 0 0 auto; white-space: nowrap; }
+/* Dos líneas simétricas dejan el título exactamente centrado. */
+.section-label::before,
+.section-label i { content: ''; flex: 1 1 0; height: 1px; }
+.section-label::before { background: linear-gradient(270deg, var(--gris-met), transparent); }
+.section-label i { background: linear-gradient(90deg, var(--gris-met), transparent); }
 
 .mixer-grid {
   display: grid;
@@ -669,6 +923,56 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 
 .mix-channel { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .mix-channel .channel-fader { height: 110px; width: 30px; }
+
+/* Escala de los faders de canal (misma idea que la referencia PCDJ): 0-10,
+   «min» abajo, «max» arriba y una raya por paso. Es puramente decorativa
+   (aria-hidden + pointer-events:none): el <input> sigue recibiendo arrastre,
+   rueda y doble clic exactamente igual que antes. */
+.fader-row { display: flex; align-items: center; gap: 6px; }
+.fader-row--right { flex-direction: row-reverse; }
+.fader-scale {
+  position: relative;
+  width: 30px;
+  height: 110px;             /* mismo recorrido que .channel-fader */
+  color: var(--gris-met);
+  pointer-events: none;
+}
+.scale-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  color: var(--plata);
+  font: 700 8px/1 "Courier New", monospace;
+  letter-spacing: .04em;
+  text-align: center;
+  text-transform: uppercase;
+  opacity: .85;
+}
+.scale-max { top: 0; }
+.scale-min { bottom: 0; }
+.scale-body {
+  position: absolute;
+  top: 13px;
+  bottom: 13px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.scale-step { display: flex; align-items: center; gap: 2px; height: 0; }
+.scale-step b {
+  flex: 0 0 13px;
+  color: var(--gris-met);
+  font: 700 8px/1 "Courier New", monospace;
+  text-align: right;
+}
+.scale-step i { flex: 0 0 7px; height: 1px; background: var(--gris-met); opacity: .7; }
+.scale-step.scale-major b { color: var(--plata); }
+.scale-step.scale-major i { flex-basis: 10px; height: 2px; background: var(--plata); opacity: .9; }
+.fader-row--right .scale-step { flex-direction: row-reverse; }
+.fader-row--right .scale-step b { text-align: left; }
+
 .chan-badge {
   display: grid;
   place-items: center;
@@ -686,18 +990,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 #vu-meter {
   display: block;
   width: 90px;
-  height: 110px;
+  height: 150px;                 /* más presencia en el mezclador */
   border: 1px solid #000;
   border-radius: 4px;
-  background:
-    repeating-linear-gradient(180deg, rgba(43, 209, 58, .18) 0 6px, transparent 6px 8px),
-    #0c1113;
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, .8);
+  /* Los segmentos los pinta main.js; aquí sólo el chasis oscuro. Los colores
+     de LED/vúmetro no se redefinen por skin. */
+  background: linear-gradient(180deg, #0d1417, #070b0d);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, .9), 0 0 10px rgba(57, 255, 106, .06);
 }
 
 .crossfade-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   margin-top: 14px;
@@ -707,6 +1011,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   background: #171c20;
 }
 .xfade-end { color: var(--plata); font-weight: 700; }
+/* Ambos contadores comparten estilo: #cf-value (B) se conserva por compatibilidad. */
+.xfade-val,
 #cf-value {
   min-width: 46px;
   padding: 2px 6px;
@@ -726,7 +1032,16 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   margin: 0;
   border: 1px solid #07090b;
   border-radius: 4px;
-  background: linear-gradient(180deg, #0a0d0f, #22282c);
+  /* Rayas de referencia sobre la pista: 10 divisiones y una marca central
+     más marcada. Decorativo, no añade nodos ni cambia el valor del fader. */
+  background-color: #0e1316;
+  background-image:
+    linear-gradient(rgba(214, 226, 232, .9), rgba(214, 226, 232, .9)),
+    linear-gradient(90deg, rgba(214, 226, 232, .42) 0 1px, transparent 1px),
+    linear-gradient(180deg, #0a0d0f, #22282c);
+  background-size: 2px 100%, 10% 100%, 100% 100%;
+  background-position: center center, left center, center center;
+  background-repeat: no-repeat, repeat-x, no-repeat;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .9);
   cursor: ew-resize;
 }
@@ -748,6 +1063,30 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   border-radius: 4px;
   background: var(--fader-knob);
   margin-top: -9px;
+}
+
+/* Rayas de agarre en los tiradores de volumen y del crossfader. Se superponen
+   al degradado --fader-knob de cada skin: no cambian colores ni interfieren
+   con arrastre, rueda o doble clic (siguen siendo los mismos <input>). */
+.channel-fader::-webkit-slider-thumb {
+  background-image:
+    repeating-linear-gradient(180deg, transparent 0 2px, rgba(0, 0, 0, .55) 2px 3px),
+    var(--fader-knob);
+}
+.channel-fader::-moz-range-thumb {
+  background-image:
+    repeating-linear-gradient(180deg, transparent 0 2px, rgba(0, 0, 0, .55) 2px 3px),
+    var(--fader-knob);
+}
+#crossfader::-webkit-slider-thumb {
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 3px, rgba(0, 0, 0, .55) 3px 4px),
+    var(--fader-knob);
+}
+#crossfader::-moz-range-thumb {
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 3px, rgba(0, 0, 0, .55) 3px 4px),
+    var(--fader-knob);
 }
 
 .mixer-foot { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 12px; }
@@ -938,6 +1277,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .track-context-menu button[data-ctx-play="1"] { color: #cfe4d6; }
 .track-context-menu button[data-ctx-play="1"]:hover { color: #e8ffef; }
 .ctx-divider { height: 1px; margin: 4px 3px; background: #12171a; }
+/* Menú de recordcases: mismo look, ancho contenido y opción de borrado clara. */
+.folder-context-menu { min-width: 196px; }
+.track-context-menu button[hidden] { display: none; }
+.track-context-menu button.ctx-danger { color: #ff8a8a; }
+.track-context-menu button.ctx-danger:hover { color: #fff; border-color: #a83232; background: linear-gradient(180deg, #7a2a2a, #3d1212); }
 
 .lib-controls {
   display: flex;
@@ -967,8 +1311,28 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   font-weight: 700;
 }
 .lib-controls button.active { color: #10201a; background: linear-gradient(180deg, #8ec9a2, #4f9a68); }
+/* Carga + play en un clic: se distingue del «→ A/B» de sólo carga. */
+.lib-controls .btn-loadplay { color: #e7f3ff; border-color: #173c5b; background: linear-gradient(180deg, #235d86, #122d45); }
+.lib-controls #btn-playload-b { color: #ffe7f1; border-color: #5b173a; background: linear-gradient(180deg, #86224f, #451126); }
+.lib-controls .btn-danger { color: #ffd7d7; border-color: #4a1c1c; background: linear-gradient(180deg, #6d2b2b, #3d1414); }
+.lib-controls .btn-danger:hover { color: #fff; border-color: #ff5252; box-shadow: 0 0 9px rgba(255, 82, 82, .4); }
 .lib-controls .check { display: flex; align-items: center; gap: 5px; color: #b9c4ca; font-size: 11px; }
-.lib-controls .check input { accent-color: var(--plata); }
+.lib-controls .check input { accent-color: var(--plata); margin: 0; }
+/* Misma altura para TODOS los controles de la barra: botones, selector,
+   campo de filtro y etiquetas de casilla quedan alineados aunque se envuelvan. */
+.lib-controls button,
+.lib-controls select,
+.lib-controls > input[type="text"],
+.lib-controls .check {
+  height: 30px;
+  min-height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+.lib-controls button,
+.lib-controls .check { display: inline-flex; align-items: center; }
 
 /* ---------- ZONA E: estado ---------- */
 .status-bar {
@@ -1000,12 +1364,35 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   outline: 2px dashed var(--plata);
   outline-offset: -4px;
 }
+/* Mientras se arrastra una fila, todos los decks se ven como destinos válidos */
+.app.dragging-track .player.drop-target {
+  box-shadow: inset 0 0 0 1px var(--accent-2), 0 4px 12px rgba(0, 0, 0, .45);
+}
 .player.drop-target.drag-over {
   outline: 2px dashed var(--led-verde);
   outline-offset: -4px;
+  box-shadow: inset 0 0 0 2px var(--led-verde), inset 0 0 34px rgba(43, 209, 58, .18), 0 6px 18px rgba(0, 0, 0, .6);
+}
+/* Aviso centrado sobre el deck receptor; no intercepta el soltar. */
+.player.drop-target.drag-over::after {
+  content: 'SUELTA AQUÍ PARA CARGAR';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: rgba(6, 12, 9, .58);
+  color: #d7ffe0;
+  font: 700 12px/1.2 "Courier New", monospace;
+  letter-spacing: .12em;
+  text-shadow: 0 0 10px rgba(43, 209, 58, .8);
+  pointer-events: none;
 }
 .lib-table tbody tr[draggable="true"] { cursor: grab; }
 .lib-table tbody tr[draggable="true"]:active { cursor: grabbing; }
+.lib-table tbody tr.dragging { opacity: .45; }
+.lib-table tbody tr.dragging .row-quick { visibility: hidden !important; }
 .top-btn.active { color: #10201a; background: linear-gradient(180deg, #8ec9a2, #4f9a68); }
 .transport button.active { box-shadow: inset 0 0 0 1px var(--led-verde), inset 0 2px 5px rgba(0, 0, 0, .7); }
 
@@ -1246,7 +1633,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
 .lib-controls select {
   flex: 0 1 160px;
   min-width: 110px;
-  padding: 5px 6px;
+  height: 30px;
+  padding: 0 6px;
   color: var(--aluminio);
   border: 1px solid #0a0c0e;
   border-radius: 4px;
@@ -1285,7 +1673,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   font-size: 10px;
   font-weight: 700;
 }
-.rc-row button.danger { color: #ffc4c4; }
+.rc-row button.danger {
+  color: #ffdada;
+  border-color: #6b1d1d;
+  background: linear-gradient(180deg, #7a2a2a, #3d1212);
+}
+.rc-row button.danger:hover { color: #fff; border-color: #ff5252; box-shadow: 0 0 9px rgba(255, 82, 82, .45); }
+[data-skin="barca"] .rc-row button.danger:hover { border-color: var(--bc-neon-red); box-shadow: 0 0 9px rgba(255, 77, 134, .4); }
 .rc-new { display: flex; gap: 6px; margin-top: 10px; }
 .rc-new input { flex: 1; }
 
@@ -1294,6 +1688,17 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--plata); out
   .players-row { grid-template-columns: 1fr; }
   .fx-grid { grid-template-columns: 1fr; }
   .lib-hint { display: none; }
+  /* En cabina apilada el reparto 50/50 pasa a franjas arriba/abajo:
+     grana arriba (A), azul abajo (B). */
+  [data-skin="barca"] .app,
+  [data-skin="barca"] .top-bar,
+  [data-skin="barca"] .fx-rack,
+  [data-skin="barca"] .mixer,
+  [data-skin="barca"] .lib-header,
+  [data-skin="barca"] .lib-controls,
+  [data-skin="barca"] .status-bar {
+    background: linear-gradient(180deg, #3a0019 0%, #2a1442 50%, #08285a 100%);
+  }
 }
 
 @media (max-width: 520px) {

@@ -17,7 +17,16 @@ const EQ_PRESETS = [
 ];
 const EQ_BANDS = ['low', 'mid', 'high'];
 const EQ_RANGE = 12; // dB
+const IDLE_MESSAGE = '-- sin pista · arrastra un tema aquí o pulsa la LCD --';
 const dbToGain = (db) => Math.pow(10, (Number(db) || 0) / 20);
+// Códigos de MediaError del <audio>: se muestran en LCD + consola para que un
+// archivo corrupto o un códec no soportado nunca falle en silencio.
+const MEDIA_ERRORS = {
+  1: 'carga abortada',
+  2: 'error de red al leer el archivo',
+  3: 'archivo corrupto o códec no soportado',
+  4: 'formato no soportado'
+};
 
 class Deck {
   constructor(options = {}) {
@@ -65,6 +74,7 @@ class Deck {
     this.autoplayAfterLoad = false;
 
     this._initDOM();
+    this.showMessage(IDLE_MESSAGE);
     this._initAudio();
     this._tick = this._tick.bind(this);
     this._raf = requestAnimationFrame(this._tick);
@@ -219,7 +229,12 @@ class Deck {
 
     // Eventos del elemento de audio
     a.addEventListener('loadedmetadata', () => { this.applyPitch(); this.draw(); });
-    a.addEventListener('canplay', () => { if (this.state === 'LOADING') this.setState('READY'); });
+    // Con autoplay ya pedido manda el resultado de play(): un 'canplay' tardío
+    // no debe dejar el deck en READY (cargado pero en silencio) ni revertir un
+    // PLAY/ERROR. autoplayAfterLoad se limpia al resolverse la carga.
+    a.addEventListener('canplay', () => {
+      if (this.state === 'LOADING' && !this.autoplayAfterLoad) this.setState('READY');
+    });
     a.addEventListener('play', () => {
       this.setState('PLAYING');
       // Un tema cuenta una sola vez por carga: reanudar tras pausa no suma.
@@ -234,8 +249,16 @@ class Deck {
     a.addEventListener('ended', () => this._onEnded());
     a.addEventListener('error', () => {
       if (!a.src) return;
+      const mediaErr = a.error || {};
+      const code = mediaErr.code || 0;
+      const detail = MEDIA_ERRORS[code] || mediaErr.message || 'no se pudo decodificar';
+      const name = this.track ? (this.track.title || this.track.name) : a.src;
       this.setState('ERROR');
-      this.showMessage('NOT LOADED! No se pudo decodificar el archivo');
+      this.showMessage('⚠ ERROR ' + (code ? 'MEDIA_ERR_' + code : '') + ': ' + detail + ' · ' + name);
+      console.error('[hammer] Deck ' + this.id.toUpperCase() + ': no se pudo decodificar «' +
+        name + '» — ' + detail, mediaErr.message || '');
+      window.setStatus && window.setStatus('⚠ Player ' + this.id.toUpperCase() +
+        ': «' + name + '» · ' + detail);
     });
 
     // Pitch
@@ -271,61 +294,85 @@ class Deck {
     if (!r) return;
     r.classList.add('drop-target');
 
-    const dragTypes = (e) => {
+    // Un archivo del explorador o una fila de la biblioteca pueden caer en este
+    // deck. El tipo propio distingue la fila incluso si el navegador no expone
+    // 'text/plain' en dt.types durante el dragover.
+    const dragInfo = (e) => {
       const dt = e.dataTransfer;
       const types = dt ? Array.from(dt.types || []) : [];
+      const lib = window.Library;
       return {
         files: types.includes('Files') || !!(dt && dt.files && dt.files.length),
-        row: types.includes('text/plain')
+        // Además de los tipos del dataTransfer, la sesión puede estar
+        // arrastrando una fila aunque el navegador oculte los tipos propios
+        // durante dragover/drop (Safari y algunos WebViews).
+        row: types.includes('application/x-hammer-track') ||
+          types.includes('text/plain') || !!(lib && (lib._dragTrack || lib._dragId))
       };
     };
 
-    // Un archivo del explorador o una fila de la biblioteca pueden caer en este deck.
-    // stopPropagation() evita que el manejador global de la app vuelva a añadir el archivo.
+    let dragLeaveTimer = null;
+    const clearDragHighlight = () => {
+      if (dragLeaveTimer) { clearTimeout(dragLeaveTimer); dragLeaveTimer = null; }
+      r.classList.remove('drag-over');
+    };
+
+    // dragenter/dragleave se disparan al entrar y salir de CADA hijo del panel.
+    // relatedTarget suele ser null durante un drag nativo, así que en vez de
+    // contar profundidad usamos un pequeño retardo: el dragover lo cancela
+    // mientras el puntero siga dentro y sólo se apaga al salir realmente.
     const acceptDrag = (e) => {
-      const t = dragTypes(e);
+      const t = dragInfo(e);
       if (!t.files && !t.row) return false;
       e.preventDefault();
       e.stopPropagation();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      if (dragLeaveTimer) { clearTimeout(dragLeaveTimer); dragLeaveTimer = null; }
       r.classList.add('drag-over');
       return true;
     };
     r.addEventListener('dragenter', acceptDrag);
     r.addEventListener('dragover', acceptDrag);
     r.addEventListener('dragleave', (e) => {
-      if (!e.relatedTarget || !r.contains(e.relatedTarget)) r.classList.remove('drag-over');
+      e.stopPropagation();
+      if (dragLeaveTimer) clearTimeout(dragLeaveTimer);
+      dragLeaveTimer = setTimeout(() => {
+        r.classList.remove('drag-over');
+        dragLeaveTimer = null;
+      }, 90);
     });
+    document.addEventListener('dragend', clearDragHighlight);
+    window.addEventListener('blur', clearDragHighlight);
+
     r.addEventListener('drop', (e) => {
-      const t = dragTypes(e);
+      const t = dragInfo(e);
       if (!t.files && !t.row) return;
       e.preventDefault();
       e.stopPropagation();
-      r.classList.remove('drag-over');
+      clearDragHighlight();
 
-      // Archivos: se añaden a la biblioteca y el primero se carga en este deck.
+      const lib = window.Library;
+
+      // Archivos del explorador: se añaden a la biblioteca y el primero se
+      // carga en este deck usando el mismo camino que el resto de la UI.
       if (t.files && e.dataTransfer.files && e.dataTransfer.files.length) {
-        const lib = window.Library;
         const tracks = lib && typeof lib.addFiles === 'function'
           ? lib.addFiles(e.dataTransfer.files) : [];
-        if (tracks.length) {
-          if (typeof lib.select === 'function') lib.select(tracks[0]);
-          this.load(tracks[0]);
-          this.showMessage(tracks[0].name);
-          window.setStatus && window.setStatus('Player ' + this.id.toUpperCase() + ' ← ' + tracks[0].title);
-        }
+        if (tracks.length && typeof lib.dropTo === 'function') lib.dropTo(tracks[0].id, this.id, true);
+        else if (tracks.length) this.load(tracks[0], true);
         return;
       }
 
-      // Fila de la biblioteca: arrastrar y soltar también carga en este deck.
-      const id = e.dataTransfer && e.dataTransfer.getData('text/plain');
-      if (!id || !window.Library) return;
-      const track = window.Library.tracks.find(t => String(t.id) === String(id));
-      if (track) {
-        window.Library.select(track);
-        this.load(track);
-        this.showMessage(track.name);
-        window.setStatus && window.setStatus(track.title + ' → Player ' + this.id.toUpperCase());
+      // Fila de la biblioteca: loadTo() avisa si hay que re-enlazar el MP3
+      // (antes se llamaba a load() directamente y el deck se quedaba CLOSED).
+      const dt = e.dataTransfer;
+      let id = dt && (dt.getData('application/x-hammer-track') || dt.getData('text/plain'));
+      if (!id && lib) id = lib._dragId || (lib._dragTrack ? String(lib._dragTrack.id) : '');
+      if (!id || !lib) return;
+      // Soltar sobre el deck (título, LCD, botones…) carga Y reproduce.
+      if (typeof lib.dropTo === 'function') lib.dropTo(id, this.id, true);
+      else if (typeof lib.loadTo === 'function') {
+        lib.loadTo(lib.tracks.find(x => String(x.id) === String(id)) || null, this.id, true);
       }
     });
 
@@ -347,9 +394,10 @@ class Deck {
         const tracks = lib && typeof lib.addFiles === 'function'
           ? lib.addFiles(input.files) : [];
         if (tracks.length) {
-          if (typeof lib.select === 'function') lib.select(tracks[0]);
-          this.load(tracks[0]);
-          this.showMessage(tracks[0].name);
+          // La LCD usa EXACTAMENTE el mismo camino que la biblioteca y el
+          // arrastre: Library.loadTo() → Deck.load() → Deck.play().
+          if (typeof lib.loadTo === 'function') lib.loadTo(tracks[0], this.id, true);
+          else this.load(tracks[0], true);
         }
         input.value = '';
       });
@@ -388,7 +436,7 @@ class Deck {
   }
 
   _bindLcdSeek(timer) {
-    let dragging = false;
+    let pointerId = null;
     const seekFromEvent = (e) => {
       const a = this.audio;
       if (!a || !Number.isFinite(a.duration) || a.duration <= 0) return;
@@ -397,21 +445,29 @@ class Deck {
       const ratio = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
       this._seekTo(ratio * a.duration);
     };
+    // Escuchamos en window mientras dura el gesto en vez de capturar el
+    // puntero: así no queda ningún elemento "dueño" del ratón al soltar fuera
+    // del timer y se puede seguir arrastrando hacia los decks sin bloqueos.
+    const onMove = (e) => { if (pointerId === e.pointerId) seekFromEvent(e); };
+    const onUp = (e) => {
+      if (e && e.pointerId !== undefined && e.pointerId !== pointerId) return;
+      pointerId = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('blur', onUp);
+    };
     timer.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (!this.track || !Number.isFinite(this.audio.duration)) return;
-      dragging = true;
-      try { timer.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      pointerId = e.pointerId;
       seekFromEvent(e);
       e.preventDefault();
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      window.addEventListener('blur', onUp);
     });
-    timer.addEventListener('pointermove', (e) => { if (dragging) seekFromEvent(e); });
-    const stop = (e) => {
-      dragging = false;
-      try { timer.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
-    };
-    timer.addEventListener('pointerup', stop);
-    timer.addEventListener('pointercancel', stop);
   }
 
   _bindSeekHold(btn, dir) {
@@ -481,23 +537,12 @@ class Deck {
     };
     const setAngle = () => el.style.setProperty('--jog-angle', this.jogAngle.toFixed(1) + 'deg');
 
-    el.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      const a = this.audio;
-      if (!this.track || !a || !Number.isFinite(a.duration)) return;
-      e.preventDefault();
-      const p = point(e);
-      mode = p.radius > 0.42 ? 'circle' : 'linear';
-      lastAngle = p.angle;
-      lastX = e.clientX;
-      startT = a.currentTime || 0;
-      acc = 0;
-      this._jogDragging = true;
-      try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
-    });
-
-    el.addEventListener('pointermove', (e) => {
-      if (!this._jogDragging) return;
+    // Escuchas en window mientras se arrastra, sin setPointerCapture: el
+    // ratón queda libre al soltar (incluso fuera del jog) y no puede arrastrar
+    // una pista desde la biblioteca con un control todavía "capturado".
+    let pointerId = null;
+    const onMove = (e) => {
+      if (!this._jogDragging || e.pointerId !== pointerId) return;
       if (mode === 'circle') {
         const p = point(e);
         const da = wrap(p.angle - lastAngle);
@@ -512,15 +557,35 @@ class Deck {
       }
       setAngle();
       this._seekTo(startT + acc);
-    });
-
-    const stop = (e) => {
-      if (!this._jogDragging) return;
-      this._jogDragging = false;
-      try { el.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
     };
-    el.addEventListener('pointerup', stop);
-    el.addEventListener('pointercancel', stop);
+    const onUp = (e) => {
+      if (e && e.pointerId !== undefined && e.pointerId !== pointerId) return;
+      this._jogDragging = false;
+      pointerId = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('blur', onUp);
+    };
+
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const a = this.audio;
+      if (!this.track || !a || !Number.isFinite(a.duration)) return;
+      e.preventDefault();
+      const p = point(e);
+      mode = p.radius > 0.42 ? 'circle' : 'linear';
+      lastAngle = p.angle;
+      lastX = e.clientX;
+      startT = a.currentTime || 0;
+      acc = 0;
+      pointerId = e.pointerId;
+      this._jogDragging = true;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      window.addEventListener('blur', onUp);
+    });
 
     el.addEventListener('wheel', (e) => {
       const a = this.audio;
@@ -581,11 +646,40 @@ class Deck {
   }
 
   // ---------- Carga y reproducción ----------
+  // Aviso único para pistas restauradas de localStorage (sin blob: en sesión).
+  // No detenemos el audio que ya suene: se rechaza la CARGA, no se expulsa el
+  // plato; pero sí limpiamos un LOADING huérfano y dejamos rastro en consola.
+  notifyMissing(track) {
+    const name = track ? (track.title || track.name || 'pista') : 'pista';
+    this.showMessage('⚠ SIN ARCHIVO · «' + name + '» · vuelve a añadir el MP3 o arrastra el archivo aquí');
+    if (!this.audio.src && this.state === 'LOADING') this.setState('CLOSED');
+    console.warn('[hammer] Deck ' + this.id.toUpperCase() + ': «' + name +
+      '» no tiene archivo enlazado en esta sesión (las URLs blob: nunca se guardan).');
+    window.setStatus && window.setStatus('⚠ «' + name +
+      '»: sin archivo en esta sesión · vuelve a añadir el MP3 o arrástralo al deck para enlazarlo');
+    return false;
+  }
+
+  // Reanudar el AudioContext DENTRO del gesto del usuario (clic, drop, cambio
+  // del selector de archivos). Es lo que evita que play() quede bloqueado por
+  // la política de autoplay. Un único punto para load() y play().
+  _resumeCtx() {
+    if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+      try { this.ctx.resume(); } catch (_) { /* ignore */ }
+    }
+  }
+
   load(track, autoplay = false) {
-    if (!track || !track.url) return Promise.resolve(false);
+    if (!track || !track.url) return Promise.resolve(this.notifyMissing(track));
+
+    this._resumeCtx();
     this._cancelMotion();
+    // Token por carga: si el usuario encadena varias, los eventos canplay/error
+    // de una carga antigua no pueden disparar el play() de la nueva (ni al
+    // revés), que era una causa de «cargó pero no sonó».
+    const token = (this._loadToken = (this._loadToken || 0) + 1);
     this.track = track;
-    this.autoplayAfterLoad = autoplay;
+    this.autoplayAfterLoad = !!autoplay;
     this._playCounted = false;
     this.cuePoint = 0;
     // TRIM guardado por pista (solo metadatos; la URL blob: nunca se persiste).
@@ -598,24 +692,75 @@ class Deck {
     this.audio.load();
     this.applyPitch();
 
+    // Clave de la unificación: arrancar AQUÍ, dentro del gesto del usuario, sin
+    // condicionar el sonido a que llegue 'canplay'. Antes la carga desde la LCD
+    // y la de la biblioteca divergían en este punto: la LCD llamaba a play()
+    // directamente y la biblioteca dejaba el deck «cargado pero en silencio».
+    let started = null;
+    if (autoplay) {
+      started = Promise.resolve(this.play());
+      started.catch(() => { /* el error se informa al resolver esta carga */ });
+    }
+
     return new Promise((resolve) => {
-      const done = (ok) => {
+      let settled = false;
+      let guard = null;
+      const cleanup = () => {
+        if (guard) { clearTimeout(guard); guard = null; }
+        this.autoplayAfterLoad = false;
         this.audio.removeEventListener('canplay', onReady);
         this.audio.removeEventListener('error', onErr);
-        if (ok && this.autoplayAfterLoad) {
-          this.autoplayAfterLoad = false;
-          this.play();
-        }
-        resolve(ok);
       };
-      const onReady = () => done(true);
-      const onErr = () => done(false);
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        if (token !== this._loadToken) { cleanup(); resolve(false); return; }
+        cleanup();
+        if (!ok) {
+          if (started) started.catch(() => { /* play() ya informó del fallo */ });
+          resolve(false); // el listener 'error' ya avisó
+          return;
+        }
+        if (!started) { resolve(true); return; }
+        // Sólo OK si además play() llegó a iniciarse: nunca un «PLAY» falso.
+        started.then(played => resolve(!!played))
+          .catch(err => { this._playError(err); resolve(false); });
+      };
+      const onReady = () => finish(true);
+      const onErr = () => finish(false);
       this.audio.addEventListener('canplay', onReady);
       this.audio.addEventListener('error', onErr);
+      // Un blob: local puede estar listo antes de registrar los listeners.
+      if (this.audio.readyState >= 3) {
+        Promise.resolve().then(() => { if (token === this._loadToken) finish(true); });
+      }
+      // Red de seguridad: si el navegador no emite 'canplay' (evento perdido,
+      // decodificador lento, contexto suspendido), la carga no queda colgada
+      // para siempre y la LCD no se queda en LOADING/READY sin sonido.
+      guard = setTimeout(() => {
+        if (!settled) finish(!!started && !this.audio.paused);
+      }, 3000);
     });
   }
 
+  // Error de play() (autoplay bloqueado, códec, elemento no reproducible):
+  // estado, LCD, barra de estado y consola. Nunca un fallo silencioso.
+  _playError(err) {
+    const name = (err && err.name) || 'desconocido';
+    const hint = name === 'NotAllowedError' ? 'audio bloqueado · pulsa PLAY'
+      : name === 'NotSupportedError' ? 'formato no soportado'
+        : 'no se pudo reproducir';
+    this.setState('ERROR');
+    this.showMessage('⚠ PLAY ERROR: ' + name + ' · ' + hint);
+    console.error('[hammer] Deck ' + this.id.toUpperCase() + ': play() rechazado', err);
+    window.setStatus && window.setStatus('⚠ Player ' + this.id.toUpperCase() + ': ' + hint);
+    return false;
+  }
+
   play() {
+    // Mismo punto de reanudación que load(): así da igual si el sonido se pide
+    // desde la LCD, la biblioteca, el arrastre o el botón PLAY del deck.
+    this._resumeCtx();
     // Si el usuario pulsa PLAY durante un frenado, se cancela el freno y se
     // devuelve la velocidad a la base antes de reanudar.
     if (this._brakeRaf) {
@@ -625,16 +770,14 @@ class Deck {
     }
     if (!this.audio.src) {
       if (this.track && this.track.url) return this.load(this.track, true);
+      this.showMessage('PLAY: sin pista cargada');
       return Promise.resolve(false);
     }
-    const p = this.audio.play();
+    let p;
+    try { p = this.audio.play(); } catch (err) { return Promise.resolve(this._playError(err)); }
     if (!p) { this.setState('PLAYING'); return Promise.resolve(true); }
-    return p.then(() => { this.setState('PLAYING'); return true; })
-      .catch((err) => {
-        // Autoplay bloqueado o archivo no reproducible
-        this.showMessage('PLAY ERROR: ' + (err && err.name ? err.name : 'desconocido'));
-        return false;
-      });
+    return Promise.resolve(p).then(() => { this.setState('PLAYING'); return true; })
+      .catch((err) => this._playError(err));
   }
 
   pause() {
@@ -660,8 +803,7 @@ class Deck {
     this.track = null;
     this.cuePoint = 0;
     this.lv = 0;
-    this.showMessage('-- sin pista --');
-    if (this.elMessage) this.elMessage.textContent = '-- sin pista --';
+    this.showMessage(IDLE_MESSAGE);
     this.leds.forEach(led => { led.style.background = 'var(--led-off)'; });
   }
 
@@ -681,7 +823,7 @@ class Deck {
   // ---------- CUE ----------
   cue() {
     if (!this.audio.src || !this.track) {
-      this.showMessage('NOT LOADED! Invalid floating point operation');
+      this.showMessage('CUE: sin pista cargada');
       return;
     }
     const t = this.audio.currentTime || 0;
